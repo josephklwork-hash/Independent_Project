@@ -875,7 +875,7 @@ useEffect(() => {
 
       if (payload.kind === "END_HAND" && payload.stacks) {
         suppressMpRef.current = true;
-        setGame((prev) => ({
+        setGame((prev: GameState) => ({
           pot: 0,
           bets: { top: 0, bottom: 0 },
           stacks: payload.stacks as GameState["stacks"],
@@ -941,7 +941,7 @@ useEffect(() => {
 
       if (payload.kind === "SET_CHECKED" && payload.seat && typeof payload.actionsThisStreet === "number") {
         suppressMpRef.current = true;
-        setChecked((prev) => ({ ...prev, [payload.seat as Seat]: true }));
+        setChecked((prev: { top: boolean; bottom: boolean }) => ({ ...prev, [payload.seat as Seat]: true }));
         setActionsThisStreet(payload.actionsThisStreet);
         suppressMpRef.current = false;
         return;
@@ -1478,7 +1478,7 @@ firstToAct,
   }
 
   function pullBetsIntoPot() {
-  setGame((prev) => {
+  setGame((prev: GameState) => {
     const next = {
       ...prev,
       pot: roundToHundredth(prev.pot + prev.bets.top + prev.bets.bottom),
@@ -1654,7 +1654,7 @@ streetRef.current = 0;
     setHandLogHistory([]);
     setLogViewOffset(0);
 
-    setGameSession((s) => {
+    setGameSession((s: number) => {
   const next = s + 1;
 
   if (multiplayerActive && isHost && !suppressMpRef.current) {
@@ -1745,7 +1745,7 @@ const [oppA, oppB] = useMemo(() => {
     const topBlind = dealerSeat === "top" ? SB : BB;
     const bottomBlind = dealerSeat === "bottom" ? SB : BB;
 
-    setGame((prev) => {
+    setGame((prev: GameState) => {
   const isLevelChangeHand = handId !== 0 && handId % 10 === 0; // hand 11, 21, 31...
   const mult = isLevelChangeHand ? 0.75 : 1;
 
@@ -2337,7 +2337,7 @@ setToAct(other);
       return;
     }
 
-  setGame((prev) => {
+  setGame((prev: GameState) => {
   const other: Seat = seat === "top" ? "bottom" : "top";
 
   const seatStack = prev.stacks[seat];
