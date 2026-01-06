@@ -4,7 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 /* ---------- types ---------- */
 
-type Role = "student" | "professional";
+type Screen =
+  | "role"
+  | "studentProfile"
+  | "studentLogin"
+  | "dashboard"
+  | "professionalDashboard"
+  | "game";
+
 type Seat = "top" | "bottom";
 
 type Card = {
@@ -49,6 +56,10 @@ type HandLogSnapshot = {
   oppPos: "SB" | "BB";
 
   heroCards: [Card, Card];
+  oppCards: [Card, Card];
+
+  // true only if opponent actually showed / was required to show
+  oppShown: boolean;
 
   heroStartStack: number;
   oppStartStack: number;
@@ -60,8 +71,8 @@ const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
 const SUITS = ["♠", "♥", "♦", "♣"];
 
 const STARTING_STACK_BB = 50;
-const SB = 0.5;
-const BB = 1;
+const BASE_SB = 0.5;
+const BASE_BB = 1;
 
 /* ---------- helpers ---------- */
 
@@ -310,6 +321,8 @@ function handRankOnly(score: number[]) {
   }
 }
 
+const connectButtonClass =
+  "rounded-xl border border-black bg-white px-3 py-1.5 text-sm font-semibold text-black transition-colors hover:bg-gray-50";
 
 /* ---------- UI components ---------- */
 
@@ -324,12 +337,12 @@ function CardTile({ card }: { card: Card }) {
   const colorClass = SUIT_COLOR[card.suit];
   return (
     <div className="relative h-24 w-16 rounded-xl border bg-white shadow-sm">
-      <div className={`absolute left-4 top-4 text-xl font-bold ${colorClass}`}>
-        {card.rank}
-      </div>
-      <div className={`absolute bottom-4 right-4 text-xl font-bold ${colorClass}`}>
-        {card.suit}
-      </div>
+      <div className={`absolute left-3 top-2 text-4xl font-extrabold ${colorClass}`}>
+  {card.rank}
+</div>
+      <div className={`absolute bottom-3 right-3 text-4xl font-bold ${colorClass}`}>
+  {card.suit}
+</div>
     </div>
   );
 }
@@ -443,6 +456,25 @@ export default function Home() {
   const [seatedRole, setSeatedRole] = useState<Role | null>(null);
 
   const [handId, setHandId] = useState(0);
+  const [gameSession, setGameSession] = useState(0);
+
+const handNo = handId + 1; // 1-based
+
+const SB = BASE_SB; // always 0.5
+const BB = BASE_BB; // always 1
+
+
+  const withinBlock = ((handNo - 1) % 10) + 1; // 1..10 within each 10-hand block
+let blindNotice: string | null = null;
+
+if (withinBlock >= 7 && withinBlock <= 10) {
+  const remaining = 11 - withinBlock; // 7->4, 8->3, 9->2, 10->1
+  blindNotice =
+    remaining === 1
+      ? "Blinds will change next hand"
+: `Blinds will change in ${remaining} hands`;
+}
+
   const [street, setStreet] = useState<Street>(0);
   const [dealerOffset, setDealerOffset] = useState<0 | 1>(0);
 
@@ -455,13 +487,17 @@ export default function Home() {
   });
 
   const [cards, setCards] = useState<Card[] | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const [actionLog, setActionLog] = useState<ActionLogItem[]>([]);
   const [handLogHistory, setHandLogHistory] = useState<HandLogSnapshot[]>([]);
   const [logViewOffset, setLogViewOffset] = useState(0);
 
+  const [screen, setScreen] = useState<Screen>("role");
+  const [gamePin, setGamePin] = useState<string | null>(null);
+  const [joinMode, setJoinMode] = useState(false);
+  const [joinPinInput, setJoinPinInput] = useState("");
+  
 const [handResult, setHandResult] = useState<HandResult>({
   status: "playing",
   winner: null,
@@ -469,7 +505,68 @@ const [handResult, setHandResult] = useState<HandResult>({
   message: "",
 });
 
+const [gameOver, setGameOver] = useState(false);
+const [playAgainRequested, setPlayAgainRequested] = useState(false);
+
 const [endedBoardSnapshot, setEndedBoardSnapshot] = useState<Street>(0);
+
+const [studentProfile, setStudentProfile] = useState({
+  firstName: "",
+  lastName: "",
+  email: "",
+  password: "",
+  year: "",
+  major: "",
+  company: "",
+  workTitle: "",
+});
+
+const [loginEmail, setLoginEmail] = useState("");
+const [loginPassword, setLoginPassword] = useState("");
+
+const [studentMenuOpen, setStudentMenuOpen] = useState(false);
+
+const [otherStudents, setOtherStudents] = useState<
+  { firstName: string; lastName: string; year: string; major: string }[]
+>([]);
+
+useEffect(() => {
+  if (screen !== "dashboard" && screen !== "professionalDashboard") return;
+
+  setOtherStudents((prev) => {
+    if (prev.length > 1) return prev;
+
+    const mockStudents = Array.from({ length: 20 }).map(() => ({
+      firstName: "Joe",
+      lastName: "Joe",
+      year: "3",
+      major: "Economics",
+    }));
+
+    return [...prev, ...mockStudents];
+  });
+}, [screen]);
+
+useEffect(() => {
+  if (screen !== "dashboard" && screen !== "professionalDashboard") return;
+
+  setOtherProfessionals((prev) => {
+    if (prev.length > 0) return prev;
+
+    const mockProfessionals = Array.from({ length: 20 }).map(() => ({
+      firstName: "Joe",
+      lastName: "Joe",
+      company: "Sample Company",
+      workTitle: "Analyst",
+    }));
+
+    return mockProfessionals;
+  });
+}, [screen]);
+
+const [otherProfessionals, setOtherProfessionals] = useState<
+  { firstName: string; lastName: string; company: string; workTitle: string }[]
+>([]);
 
   // betting round tracking
   const [toAct, setToAct] = useState<Seat>("bottom");
@@ -486,6 +583,8 @@ const [endedBoardSnapshot, setEndedBoardSnapshot] = useState<Street>(0);
   // timers
   const opponentTimerRef = useRef<number | null>(null);
   const nextHandTimerRef = useRef<number | null>(null);
+  const gameOverRef = useRef(false);
+  const allInCallThisHandRef = useRef(false);
   const actionLogRef = useRef<ActionLogItem[]>([]);
   const endedStreetRef = useRef<Street>(0);
   const blindsPostedRef = useRef(false);
@@ -495,6 +594,10 @@ const [endedBoardSnapshot, setEndedBoardSnapshot] = useState<Street>(0);
 useEffect(() => {
   gameRef.current = game;
 }, [game]);
+
+useEffect(() => {
+  gameOverRef.current = gameOver;
+}, [gameOver]);
 
 useEffect(() => {
   streetRef.current = street;
@@ -519,6 +622,10 @@ useEffect(() => {
 
   // 0 = current hand, 1 = previous hand, 2 = two hands ago, etc.
 
+  function generate4DigitPin() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
   function clearTimers() {
     if (opponentTimerRef.current) {
       window.clearTimeout(opponentTimerRef.current);
@@ -529,6 +636,14 @@ useEffect(() => {
       nextHandTimerRef.current = null;
     }
   }
+
+  function triggerGameOverSequence() {
+  if (gameOverRef.current) return;
+
+  gameOverRef.current = true;
+  setGameOver(true);
+  clearTimers();
+}
 
   function snapshotCurrentHandLog() {
   const endedSt = endedStreetRef.current;
@@ -549,6 +664,19 @@ useEffect(() => {
       ? [youC!, youD!]
       : [youD!, youC!],
 
+  oppCards:
+    RANK_TO_VALUE[oppA!.rank] >= RANK_TO_VALUE[oppB!.rank]
+      ? [oppA!, oppB!]
+      : [oppB!, oppA!],
+
+  // Decide shown vs mucked from what actually got logged
+  oppShown: (() => {
+    const log = actionLogRef.current;
+    const mucked = log.some((it) => it.seat === "top" && /muck/i.test(it.text));
+    const showed = log.some((it) => it.seat === "top" && it.text.startsWith("Shows "));
+    return showed && !mucked;
+  })(),
+
   heroStartStack: handStartStacks.bottom,
   oppStartStack: handStartStacks.top,
 };
@@ -565,7 +693,7 @@ useEffect(() => {
       return;
     }
     setCards(drawUniqueCards(9));
-  }, [seatedRole, handId]);
+ }, [seatedRole, handId, gameSession]);
 
   function logAction(seat: Seat, text: string, potOverride?: number) {
   const potNow =
@@ -620,75 +748,60 @@ const shouldAppendPot =
     }));
   }
 
-  function endHand(winner: Seat | "tie", reason: HandEndReason, message: string) {
-    setGame((prev) => {
-      const fullPot = roundToHundredth(prev.pot + prev.bets.top + prev.bets.bottom);
+  function endHand(
+  winner: Seat | "tie",
+  reason: HandEndReason,
+  message: string,
+  showdownFirstOverride: Seat | null = null
+) {
+  // Always kill any pending timers first (especially auto-next-hand)
+  clearTimers();
 
-      if (winner === "tie") {
-        const half = roundToHundredth(fullPot / 2);
-        return {
-          pot: 0,
-          bets: { top: 0, bottom: 0 },
-          stacks: {
-            top: roundToHundredth(prev.stacks.top + half),
-            bottom: roundToHundredth(prev.stacks.bottom + (fullPot - half)),
-          },
-        };
-      }
+  const prev = gameRef.current;
+  const fullPot = roundToHundredth(prev.pot + prev.bets.top + prev.bets.bottom);
 
-      return {
-        pot: 0,
-        bets: { top: 0, bottom: 0 },
-        stacks: {
-          ...prev.stacks,
-          [winner]: roundToHundredth(prev.stacks[winner] + fullPot),
-        } as GameState["stacks"],
-      };
-    });
+  // Compute next stacks deterministically (no setState side effects)
+  let nextStacks: GameState["stacks"];
 
-    setHandResult({ status: "ended", winner, reason, message });
-
-    setTimeout(() => {
-  snapshotCurrentHandLog();
-}, 0);
-
-
-    // reveal behavior at showdown
-if (reason === "showdown") {
-  // tie => both must show
   if (winner === "tie") {
-    setOppRevealed(true);
-    setYouMucked(false);
-    return;
+    const half = roundToHundredth(fullPot / 2);
+    nextStacks = {
+      top: roundToHundredth(prev.stacks.top + half),
+      bottom: roundToHundredth(prev.stacks.bottom + (fullPot - half)),
+    };
+  } else {
+    nextStacks = {
+      ...prev.stacks,
+      [winner]: roundToHundredth(prev.stacks[winner] + fullPot),
+    } as GameState["stacks"];
   }
 
-  // If opponent must show first (opponent bet, you called)
-  if (showdownFirst === "top") {
-    setOppRevealed(true);
+  // Game is over if either stack is 0 (or below due to rounding)
+  const shouldEndGame = nextStacks.top <= 0 || nextStacks.bottom <= 0;
 
-    // Default: you do NOT show unless needed/wanted
-    // - if you lose, you auto-muck
-    // - if you win, you also default to muck (you can optionally show)
-    setYouMucked(true);
-    return;
+  // Commit the chip state
+  setGame({
+    pot: 0,
+    bets: { top: 0, bottom: 0 },
+    stacks: nextStacks,
+  });
+
+  // Mark hand ended + snapshot
+  setHandResult({ status: "ended", winner, reason, message });
+  setTimeout(() => snapshotCurrentHandLog(), 0);
+
+  // If this hand ends the match, freeze here.
+  if (shouldEndGame) {
+    gameOverRef.current = true; // immediate guard
+    setGameOver(true);          // UI state
+    clearTimers();              // extra safety
   }
-
-  // If you must show first (you bet, opponent called)
-  if (showdownFirst === "bottom") {
-    // Opponent only shows if they win
-    setOppRevealed(winner === "top");
-    setYouMucked(false);
-    return;
-  }
-
-  // If no bettor tracked (check-check type showdown), just show both for now
-  setOppRevealed(true);
-  setYouMucked(false);
 }
 
-  }
+ function startNewHand() {
+    // Don't start a new hand if game is over
+    if (gameOverRef.current) return;
 
-  function startNewHand() {
     setHandResult({ status: "playing", winner: null, reason: null, message: "" });
     setActionLog([]);
     actionLogRef.current = [];
@@ -705,20 +818,28 @@ if (reason === "showdown") {
 
     setSawCallThisStreet(false);
 
-    setHandId((x) => x + 1);
+    setHandId((h) => h + 1);
   }
 
   function resetGame() {
     // reset stacks + randomize starting dealer + deal fresh hand
     clearTimers();
 
+    gameOverRef.current = false;
+    setGameOver(false);
+    setPlayAgainRequested(false);
+
     setDealerOffset(Math.random() < 0.5 ? 0 : 1);
 
-    setGame({
-      stacks: { top: STARTING_STACK_BB, bottom: STARTING_STACK_BB },
-      bets: { top: 0, bottom: 0 },
-      pot: 0,
-    });
+    const freshGame: GameState = {
+  stacks: { top: STARTING_STACK_BB, bottom: STARTING_STACK_BB },
+  bets: { top: 0, bottom: 0 },
+  pot: 0,
+};
+
+setGame(freshGame);
+gameRef.current = freshGame;
+streetRef.current = 0;
 
     setHandResult({ status: "playing", winner: null, reason: null, message: "" });
     setActionLog([]);
@@ -735,8 +856,12 @@ if (reason === "showdown") {
     setYouMucked(false);
 
     setBetSize(2);
+    setHandLogHistory([]);
+    setLogViewOffset(0);
 
-    setHandId((x) => x + 1); // guarantees new hand effects run
+    setGameSession((s) => s + 1);
+setHandId(0); // reset to Hand #1
+blindsPostedRef.current = false;
   }
 
   function setBetSizeRounded(value: number | "") {
@@ -785,6 +910,7 @@ const [oppA, oppB] = useMemo(() => {
 
     // reset per-hand state
     setHandResult({ status: "playing", winner: null, reason: null, message: "" });
+    allInCallThisHandRef.current = false;
     setActionLog([]);
     actionLogRef.current = [];
     setStreet(0);
@@ -798,17 +924,25 @@ const [oppA, oppB] = useMemo(() => {
     const topBlind = dealerSeat === "top" ? SB : BB;
     const bottomBlind = dealerSeat === "bottom" ? SB : BB;
 
-    setGame((prev) => ({
-      pot: 0,
-      bets: {
-        top: roundToHundredth(topBlind),
-        bottom: roundToHundredth(bottomBlind),
-      },
-      stacks: {
-        top: roundToHundredth(Math.max(0, prev.stacks.top - topBlind)),
-        bottom: roundToHundredth(Math.max(0, prev.stacks.bottom - bottomBlind)),
-      },
-    }));
+    setGame((prev) => {
+  const isLevelChangeHand = handId !== 0 && handId % 10 === 0; // hand 11, 21, 31...
+  const mult = isLevelChangeHand ? 0.75 : 1;
+
+  const topScaled = roundToHundredth(prev.stacks.top * mult);
+  const bottomScaled = roundToHundredth(prev.stacks.bottom * mult);
+
+  return {
+  pot: 0,
+  bets: {
+    top: roundToHundredth(topBlind),
+    bottom: roundToHundredth(bottomBlind),
+  },
+  stacks: {
+    top: roundToHundredth(Math.max(0, topScaled - topBlind)),
+    bottom: roundToHundredth(Math.max(0, bottomScaled - bottomBlind)),
+  },
+};
+});
 
     // who acts first preflop = dealer
     setToAct(dealerSeat);
@@ -830,7 +964,7 @@ const [oppA, oppB] = useMemo(() => {
 
     setBetSize(2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seatedRole, handId, dealerSeat]);
+  }, [seatedRole, handId, dealerSeat, gameSession]);
 
   const topLabel = dealerSeat === "top" ? "SB" : "BB";
   const bottomLabel = dealerSeat === "bottom" ? "SB" : "BB";
@@ -887,7 +1021,7 @@ const [oppA, oppB] = useMemo(() => {
   const nextStreet: Street = street === 0 ? 3 : street === 3 ? 4 : 5;
 
   // If anyone is all-in postflop, run it out to the river immediately
-  const someoneAllIn = (street !== 0) && (game.stacks.top <= 0 || game.stacks.bottom <= 0);
+  const someoneAllIn = (game.stacks.top <= 0 || game.stacks.bottom <= 0);
 
   if (someoneAllIn) {
     // show the full board
@@ -925,82 +1059,111 @@ const postflopCallThenCheckClosed =
   (checked.top || checked.bottom) &&
   actionsThisStreet >= 2;
 
-if ((bothChecked || preflopCallThenCheckClosed || postflopCallThenCheckClosed) && equalBets) {
+// ✅ NEW: If a bet gets called and someone is all-in, end the street immediately (no check needed)
+const allInCallClosed =
+  sawCallThisStreet &&
+  equalBets &&
+  (game.stacks.top <= 0 || game.stacks.bottom <= 0);
+
+if (
+  (bothChecked || preflopCallThenCheckClosed || postflopCallThenCheckClosed || allInCallClosed) &&
+  equalBets
+) {
   pullBetsIntoPot();
 
-  if (street < 5) {
-    const nextStreet: Street = street === 0 ? 3 : street === 3 ? 4 : 5;
-
-    const someoneAllIn = (street !== 0) && (game.stacks.top <= 0 || game.stacks.bottom <= 0);
-
-    if (someoneAllIn) {
-      setStreet(5);
-      resolveShowdown();
-    } else {
-      resetStreetRound(nextStreet);
-    }
-  } else {
+  // ✅ NEW: if anyone is all-in, run it out to the river and resolve immediately
+  if (game.stacks.top <= 0 || game.stacks.bottom <= 0) {
+    setStreet(5);
     resolveShowdown();
+    return;
   }
 
+    if (street < 5) {
+    const nextStreet: Street = street === 0 ? 3 : street === 3 ? 4 : 5;
+    resetStreetRound(nextStreet);
+  } else {
+    // River checked through (no betting): out-of-position shows first
+    const noBetOnRiver = bothChecked && streetBettor === null;
+    resolveShowdown(noBetOnRiver ? nonDealerSeat : null);
+  }
 }
 
   }
 
     function resolveShowdown() {
-    const top7 = [oppA!, oppB!, ...board] as Card[];
-    const bottom7 = [youC!, youD!, ...board] as Card[];
+  const top7 = [oppA!, oppB!, ...board] as Card[];
+  const bottom7 = [youC!, youD!, ...board] as Card[];
 
-    const topScore = evaluate7(top7);
-    const bottomScore = evaluate7(bottom7);
-    const cmp = compareScore(bottomScore, topScore);
-    endedStreetRef.current = 5;
-    setEndedBoardSnapshot(5);
+  const topScore = evaluate7(top7);
+  const bottomScore = evaluate7(bottom7);
+  const cmp = compareScore(bottomScore, topScore);
 
-    const topBest5 = sortBest5ForDisplay(best5From7(top7));
-    const bottomBest5 = sortBest5ForDisplay(best5From7(bottom7));
+  endedStreetRef.current = 5;
+  setEndedBoardSnapshot(5);
 
+  const topBest5 = sortBest5ForDisplay(best5From7(top7));
+  const bottomBest5 = sortBest5ForDisplay(best5From7(bottom7));
+
+  // Show order:
+  // - If there was betting on the river, the last aggressor on the river shows first.
+  // - If it was checked through, out-of-position (non-dealer) shows first.
+  const firstToShow: Seat = streetBettor ?? nonDealerSeat;
+  const secondToShow: Seat = firstToShow === "top" ? "bottom" : "top";
+  setShowdownFirst(firstToShow);
+
+  const winner: Seat | "tie" = cmp > 0 ? "bottom" : cmp < 0 ? "top" : "tie";
+
+  // First player always shows.
+  // Second player shows iff they are the winner or it’s a tie; otherwise second may muck.
+  const secondShows = winner === "tie" || winner === secondToShow;
+
+  const topShows = firstToShow === "top" || (secondToShow === "top" && secondShows);
+  const bottomShows = firstToShow === "bottom" || (secondToShow === "bottom" && secondShows);
+
+  // Control face-up cards in the UI
+  setOppRevealed(topShows);
+  setYouMucked(!bottomShows);
+
+  // Log actions in correct showdown order
+  logAction(
+    firstToShow,
+    `Shows ${(firstToShow === "top" ? topBest5 : bottomBest5).map(cardStr).join("\u00A0")}`
+  );
+
+  if (secondShows) {
     logAction(
-  "top",
-  `Shows ${topBest5.map(cardStr).join("\u00A0")}`
-);
-logAction(
-  "bottom",
-  `Shows ${bottomBest5.map(cardStr).join("\u00A0")}`
-);
-
-const potTotal = formatBB(
-  roundToHundredth(
-    gameRef.current.pot + gameRef.current.bets.top + gameRef.current.bets.bottom
-  )
-);
-
-if (cmp > 0) {
-  logAction(
-    "bottom",
-    `Wins ${potTotal} BB ${bottomBest5.map(cardStr).join("\u00A0")}`
-  );
-  endHand("bottom", "showdown", `You win ${potTotal} BB`);
-  return;
-}
-if (cmp < 0) {
-  logAction(
-    "top",
-    `Wins ${potTotal} BB ${topBest5.map(cardStr).join("\u00A0")}`
-  );
-  endHand("top", "showdown", `Opponent wins ${potTotal} BB`);
-  return;
-}
-
-const halfPot = formatBB(roundToHundredth((game.pot + game.bets.top + game.bets.bottom) / 2));
-
-logAction(
-  "bottom",
-  `Split pot ${halfPot} BB ${bottomBest5.map(cardStr).join("\u00A0")}`
-);
-endHand("tie", "showdown", `Split pot ${halfPot} BB`);
-
+      secondToShow,
+      `Shows ${(secondToShow === "top" ? topBest5 : bottomBest5).map(cardStr).join("\u00A0")}`
+    );
+  } else {
+    logAction(secondToShow, secondToShow === "top" ? "Opponent mucked" : "You mucked");
   }
+
+  const potTotal = formatBB(
+    roundToHundredth(gameRef.current.pot + gameRef.current.bets.top + gameRef.current.bets.bottom)
+  );
+
+  if (winner === "bottom") {
+    logAction("bottom", `Wins ${potTotal} BB ${bottomBest5.map(cardStr).join("\u00A0")}`);
+    endHand("bottom", "showdown", `You win ${potTotal} BB`);
+    return;
+  }
+
+  if (winner === "top") {
+    logAction("top", `Wins ${potTotal} BB ${topBest5.map(cardStr).join("\u00A0")}`);
+    endHand("top", "showdown", `Opponent wins ${potTotal} BB`);
+    return;
+  }
+
+  const halfPot = formatBB(
+    roundToHundredth(
+      (gameRef.current.pot + gameRef.current.bets.top + gameRef.current.bets.bottom) / 2
+    )
+  );
+
+  logAction("bottom", `Split pot ${halfPot} BB ${bottomBest5.map(cardStr).join("\u00A0")}`);
+  endHand("tie", "showdown", `Split pot ${halfPot} BB`);
+}
 
   function best5From7(all: Card[]) {
   let bestScore: number[] | null = null;
@@ -1126,7 +1289,7 @@ function cards5Str(cards5: Card[]) {
 
 logAction(
   other,
-  `${seat === "bottom" ? "Opponent" : "You"} wins ${potTotal}bb\n(no showdown)`
+  `${other === "bottom" ? "You" : "Opponent"} wins ${potTotal}bb\n(no showdown)`
 );
 
 endHand(
@@ -1168,20 +1331,61 @@ setToAct(other);
       return;
     }
 
-    setGame((prev) => ({
-      ...prev,
-      stacks: {
-        ...prev.stacks,
-        [seat]: roundToHundredth(prev.stacks[seat] - add),
-      } as GameState["stacks"],
-      bets: {
-        ...prev.bets,
-        [seat]: roundToHundredth(prev.bets[seat] + add),
-      } as GameState["bets"],
-    }));
+  setGame((prev) => {
+  const other: Seat = seat === "top" ? "bottom" : "top";
 
-    const callerWillBeAllIn = roundToHundredth(game.stacks[seat] - add) <= 0;
+  const seatStack = prev.stacks[seat];
+  const otherStack = prev.stacks[other];
+
+  const seatBet = prev.bets[seat];
+  const otherBet = prev.bets[other];
+
+  const toCallPrev = roundToHundredth(Math.max(0, otherBet - seatBet));
+  const addPrev = roundToHundredth(Math.min(toCallPrev, seatStack));
+
+  let newSeatStack = roundToHundredth(Math.max(0, seatStack - addPrev));
+  let newSeatBet = roundToHundredth(seatBet + addPrev);
+
+  let newOtherStack = otherStack;
+  let newOtherBet = otherBet;
+
+  // If caller couldn't fully call (all-in short), cap the bettor to the matched amount
+  // and refund the unmatched remainder back to the bettor's stack.
+  if (addPrev < toCallPrev) {
+    const refund = roundToHundredth(Math.max(0, newOtherBet - newSeatBet));
+    if (refund > 0) {
+      newOtherBet = roundToHundredth(newOtherBet - refund);
+      newOtherStack = roundToHundredth(newOtherStack + refund);
+    }
+  }
+
+  return {
+    ...prev,
+    stacks: {
+      ...prev.stacks,
+      [seat]: newSeatStack,
+      [other]: newOtherStack,
+    } as GameState["stacks"],
+    bets: {
+      ...prev.bets,
+      [seat]: newSeatBet,
+      [other]: newOtherBet,
+    } as GameState["bets"],
+  };
+});
+
+const callerWillBeAllIn = roundToHundredth(game.stacks[seat] - add) <= 0;
 const bettor = streetBettor;
+const bettorSeat: Seat = seat === "top" ? "bottom" : "top";
+const facingBeforeCall = currentFacingBet(seat);
+
+if (
+  facingBeforeCall &&
+  (callerWillBeAllIn || game.stacks[bettorSeat] <= 0)
+) {
+  allInCallThisHandRef.current = true;
+}
+
 if (street !== 0 && callerWillBeAllIn && bettor) {
   setShowdownFirst(bettor);
 }
@@ -1224,8 +1428,41 @@ if (street === 5 && currentFacingBet(seat)) {
     ? roundToHundredth(otherBet + lastRaiseSize)
     : roundToHundredth(curr + Math.max(BB, 0));
 
-    const maxTarget = roundToHundredth(curr + game.stacks[seat]);
-    const target = roundToHundredth(clamp(targetTotalBet, minTarget, maxTarget));
+    const otherStack = game.stacks[other];
+const otherCurr = game.bets[other];
+
+// Effective max total bet = what the shorter stack can match
+const effectiveMax = roundToHundredth(
+  Math.min(
+    curr + game.stacks[seat],
+    otherCurr + otherStack
+  )
+);
+
+const maxTarget = effectiveMax;
+
+// If opponent is already all-in (or this action would only match the bet),
+// this is NOT a raise — it is a call/all-in.
+const isOnlyCalling =
+  roundToHundredth(maxTarget) === roundToHundredth(otherBet);
+
+// Final target logic:
+// 1) If only calling → target = otherBet
+// 2) Else if stacks cap below min raise → target = maxTarget
+// 3) Else normal clamp
+const target = roundToHundredth(
+  isOnlyCalling
+    ? otherBet
+    : maxTarget < minTarget
+    ? maxTarget
+    : clamp(targetTotalBet, minTarget, maxTarget)
+);
+
+// If the target equals the opponent's bet, that's a CALL (not a raise).
+if (isFacing && roundToHundredth(target) === roundToHundredth(otherBet)) {
+  actCall(seat);
+  return;
+}
 
     const add = roundToHundredth(Math.max(0, target - curr));
     if (add <= 0) return;
@@ -1234,7 +1471,7 @@ if (street === 5 && currentFacingBet(seat)) {
       ...prev,
       stacks: {
         ...prev.stacks,
-        [seat]: roundToHundredth(prev.stacks[seat] - add),
+        [seat]: roundToHundredth(Math.max(0, prev.stacks[seat] - add)),
       } as GameState["stacks"],
       bets: {
         ...prev.bets,
@@ -1247,7 +1484,6 @@ if (street === 5 && currentFacingBet(seat)) {
     : roundToHundredth(target - curr);
 
     setLastRaiseSize(newRaiseSize);
-
 
     logAction(
   seat,
@@ -1390,80 +1626,637 @@ if (street === 5 && currentFacingBet(seat)) {
   return () => window.removeEventListener("keydown", onKeyDown);
 }, [handLogHistory.length]);
 
+ // auto next hand 5 seconds after hand ends
+useEffect(() => {
+  if (handResult.status !== "ended") return;
 
-  // auto next hand 10 seconds after hand ends
-  useEffect(() => {
-    if (handResult.status !== "ended") return;
-
-    if (nextHandTimerRef.current) window.clearTimeout(nextHandTimerRef.current);
-    nextHandTimerRef.current = window.setTimeout(() => {
-      startNewHand();
-    }, 10000);
-
-    return () => {
-      if (nextHandTimerRef.current) {
-        window.clearTimeout(nextHandTimerRef.current);
-        nextHandTimerRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handResult.status]);
-
-  /* ---------- role pick screen ---------- */
-
-  if (!seatedRole) {
-    const baseButton =
-      "w-full rounded-3xl border px-6 font-semibold transition-colors duration-200 hover:bg-gray-50 hover:border-gray-300";
-
-    const seatAs = (role: Role) => {
-      clearTimers();
-
-      setDealerOffset(Math.random() < 0.5 ? 0 : 1);
-      setHandId(0);
-      setStreet(0);
-
-      setChecked({ top: false, bottom: false });
-      setLastAggressor(null);
-      setLastToActAfterAggro(null);
-      setActionsThisStreet(0);
-
-      setActionLog([]);
-      actionLogRef.current = [];
-      setBetSize(2);
-
-      setGame({
-        stacks: { top: STARTING_STACK_BB, bottom: STARTING_STACK_BB },
-        bets: { top: 0, bottom: 0 },
-        pot: 0,
-      });
-
-      setHandResult({ status: "playing", winner: null, reason: null, message: "" });
-
-      setSeatedRole(role);
-    };
-
-    return (
-      <main className="flex min-h-screen items-center justify-center px-6">
-        <div className="w-full max-w-xl">
-          <h1 className="mb-8 text-center text-3xl font-bold">Take a seat</h1>
-
-          <div className="flex flex-col gap-4">
-            <button onClick={() => seatAs("student")} className={`${baseButton} py-10 text-xl`}>
-              Student
-            </button>
-            <button
-              onClick={() => seatAs("professional")}
-              className={`${baseButton} py-10 text-xl`}
-            >
-              Professional
-            </button>
-          </div>
-        </div>
-      </main>
-    );
+  if (gameOverRef.current) {
+    if (nextHandTimerRef.current) {
+      window.clearTimeout(nextHandTimerRef.current);
+      nextHandTimerRef.current = null;
+    }
+    return;
   }
 
+  if (nextHandTimerRef.current) window.clearTimeout(nextHandTimerRef.current);
+  nextHandTimerRef.current = window.setTimeout(() => {
+    startNewHand();
+  }, 5000);
+
+  return () => {
+    if (nextHandTimerRef.current) {
+      window.clearTimeout(nextHandTimerRef.current);
+      nextHandTimerRef.current = null;
+    }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [handResult.status]);
+
+/* ---------- title screen ---------- */
+
+if (screen === "role") {
+  const baseButton =
+    "w-full rounded-3xl border px-6 font-semibold transition-colors duration-200 hover:bg-gray-50 hover:border-gray-300";
+
+const createGame = () => {
+  clearTimers();
+  setJoinMode(false);
+  setJoinPinInput("");
+  setGamePin(generate4DigitPin());
+};
+
+const joinGame = () => {
+  clearTimers();
+  setGamePin(null);
+  setJoinMode(true);
+  setJoinPinInput("");
+};
+
+  const clearPin = () => {
+  setGamePin(null);
+  setJoinMode(false);
+  setJoinPinInput("");
+};
+
+  return (
+    <main className="relative flex min-h-screen items-center justify-center px-6">
+    <div className="absolute top-6 right-6 flex items-center gap-4">
+  {studentProfile.firstName && studentProfile.lastName ? (
+  <>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setStudentMenuOpen((o) => !o)}
+        className="text-sm font-semibold text-white underline opacity-90 hover:opacity-100"
+      >
+        {studentProfile.firstName} {studentProfile.lastName}
+      </button>
+
+      {studentMenuOpen && (
+        <div className="absolute right-0 mt-2 w-40 rounded-xl border bg-white shadow-md">
+          <button
+            type="button"
+            onClick={() => {
+  setStudentMenuOpen(false);
+  resetGame();
+  setStudentProfile({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    year: "",
+    major: "",
+    company: "",
+    workTitle: "",
+  });
+  setSeatedRole(null);
+  setScreen("role");
+}}
+            className="w-full flex items-center px-4 py-2 text-left text-sm font-semibold text-black hover:bg-gray-100"
+          >
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+
+    <button
+  type="button"
+  onClick={() =>
+    setScreen(
+      seatedRole === "professional"
+        ? "professionalDashboard"
+        : "dashboard"
+    )
+  }
+  className="text-sm font-semibold text-white underline opacity-80 hover:opacity-100"
+>
+  Dashboard
+</button>
+
+  </>
+) : (
+    <>
+      <button
+  type="button"
+  onClick={() => {
+    clearTimers();
+    setScreen("studentLogin");
+  }}
+  className="text-sm font-semibold text-white underline opacity-80 hover:opacity-100"
+>
+  Log in
+</button>
+
+      <button
+        type="button"
+        onClick={() => {
+  clearTimers();
+  setSeatedRole(null);
+  setScreen("studentProfile");
+}}
+        className="text-sm font-semibold text-white underline opacity-80 hover:opacity-100"
+      >
+        Sign up
+      </button>
+    </>
+  )}
+
+  <button
+  type="button"
+  onClick={() => {
+    clearTimers();
+    resetGame();
+    setSeatedRole((prev) => prev ?? "student");
+    setScreen("game");
+  }}
+  className="text-sm font-semibold text-white underline opacity-80 hover:opacity-100"
+>
+  Go to game
+</button>
+</div>
+
+      <div className="w-full max-w-xl flex flex-col">
+        <h1 className="h-[44px] mb-8 text-center text-3xl font-bold leading-[44px]">
+          TEMP TITLE
+        </h1>
+
+      <div className="h-[220px] flex flex-col justify-start">
+  {/* CREATE GAME PIN VIEW */}
+  {gamePin && !joinMode && (
+    <div className="flex flex-col items-center gap-6">
+      <div className="text-lg font-semibold tabular-nums">
+        Game PIN: <span className="font-bold">{gamePin}</span>
+      </div>
+
+      <button onClick={clearPin} className={`${baseButton} py-4 text-base max-w-sm`}>
+        Back
+      </button>
+    </div>
+  )}
+
+  {/* JOIN GAME INPUT VIEW */}
+  {!gamePin && joinMode && (
+    <div className="flex flex-col items-center gap-6">
+      <input
+        type="text"
+        inputMode="numeric"
+        maxLength={4}
+        value={joinPinInput}
+        onChange={(e) =>
+          setJoinPinInput(e.target.value.replace(/\D/g, ""))
+        }
+        placeholder="Enter Game PIN"
+        className="w-full max-w-xs rounded-xl border px-4 py-3 text-center text-lg tracking-widest tabular-nums"
+      />
+
+      <button
+        onClick={clearPin}
+        className={`${baseButton} py-4 text-base max-w-sm`}
+      >
+        Back
+      </button>
+    </div>
+  )}
+
+  {/* DEFAULT TITLE SCREEN BUTTONS */}
+  {!gamePin && !joinMode && (
+    <div className="flex flex-col gap-4">
+      <button onClick={createGame} className={`${baseButton} py-10 text-xl`}>
+        Create Game
+      </button>
+
+      <button onClick={joinGame} className={`${baseButton} py-10 text-xl`}>
+        Join Game
+      </button>
+    </div>
+  )}
+</div>
+      </div>
+    </main>
+  );
+}
+
+
+/* ---------- Sign Up setup ---------- */
+
+if (screen === "studentProfile") {
+  return (
+    <main className="relative flex min-h-screen items-center justify-center px-6">
+      <div className="w-full max-w-md">
+        <h1 className="mb-6 text-center text-3xl font-bold">Sign up</h1>
+
+<div className="mb-6 flex gap-3">
+  <button
+  type="button"
+  onClick={() => setSeatedRole("student")}
+  className={`flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors hover:bg-gray-50 ${
+    seatedRole === "student" ? "border-white bg-white/10" : ""
+  }`}
+>
+  Student
+</button>
+
+  <button
+  type="button"
+  onClick={() => setSeatedRole("professional")}
+  className={`flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors hover:bg-gray-50 ${
+    seatedRole === "professional" ? "border-white bg-white/10" : ""
+  }`}
+>
+  Professional
+</button>
+</div>
+
+        <div className="flex flex-col gap-4">
+          <input
+            type="text"
+            placeholder="First name"
+            value={studentProfile.firstName}
+            onChange={(e) =>
+              setStudentProfile({ ...studentProfile, firstName: e.target.value })
+            }
+            className="rounded-xl border px-4 py-3 text-sm"
+          />
+
+          <input
+            type="text"
+            placeholder="Last name"
+            value={studentProfile.lastName}
+            onChange={(e) =>
+              setStudentProfile({ ...studentProfile, lastName: e.target.value })
+            }
+            className="rounded-xl border px-4 py-3 text-sm"
+          />
+
+          <input
+  type="email"
+  placeholder="Email"
+  value={studentProfile.email}
+  onChange={(e) =>
+    setStudentProfile({ ...studentProfile, email: e.target.value })
+  }
+  className="rounded-xl border px-4 py-3 text-sm"
+/>
+
+<input
+  type="password"
+  placeholder="Password"
+  value={studentProfile.password}
+  onChange={(e) =>
+    setStudentProfile({ ...studentProfile, password: e.target.value })
+  }
+  className="rounded-xl border px-4 py-3 text-sm"
+/>
+
+{seatedRole === "student" && (
+  <>
+    <input
+      type="text"
+      placeholder="Year"
+      value={studentProfile.year}
+      onChange={(e) =>
+        setStudentProfile({ ...studentProfile, year: e.target.value })
+      }
+      className="rounded-xl border px-4 py-3 text-sm"
+    />
+
+    <input
+      type="text"
+      placeholder="Major"
+      value={studentProfile.major}
+      onChange={(e) =>
+        setStudentProfile({ ...studentProfile, major: e.target.value })
+      }
+      className="rounded-xl border px-4 py-3 text-sm"
+    />
+  </>
+)}
+
+{seatedRole === "professional" && (
+  <>
+    <input
+      type="text"
+      placeholder="Company"
+      value={studentProfile.company || ""}
+      onChange={(e) =>
+        setStudentProfile({ ...studentProfile, company: e.target.value })
+      }
+      className="rounded-xl border px-4 py-3 text-sm"
+    />
+
+    <input
+      type="text"
+      placeholder="Work title"
+      value={studentProfile.workTitle || ""}
+      onChange={(e) =>
+        setStudentProfile({ ...studentProfile, workTitle: e.target.value })
+      }
+      className="rounded-xl border px-4 py-3 text-sm"
+    />
+  </>
+)}
+
+          <button
+  type="button"
+  disabled={!seatedRole}
+  onClick={() => {
+    if (seatedRole === "student") {
+      setOtherStudents((prev) => [studentProfile, ...prev]);
+    } else {
+      setOtherProfessionals((prev) => [studentProfile, ...prev]);
+    }
+    setScreen("role");
+  }}
+  className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors ${
+    seatedRole ? "hover:bg-gray-50" : "opacity-50 cursor-not-allowed"
+  }`}
+>
+  Continue
+</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/* ---------- student login ---------- */
+
+if (screen === "studentLogin") {
+  return (
+    <main className="relative flex min-h-screen items-center justify-center px-6">
+      <div className="w-full max-w-md">
+        <h1 className="mb-6 text-center text-3xl font-bold">Log in</h1>
+
+        <div className="flex flex-col gap-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            className="rounded-xl border px-4 py-3 text-sm"
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            className="rounded-xl border px-4 py-3 text-sm"
+          />
+
+          <button
+            type="button"
+            onClick={() => {
+              setScreen("role");
+            }}
+            className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold hover:bg-gray-50"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/* ---------- student dashboard ---------- */
+
+if (screen === "dashboard" && seatedRole === "student") {
+  const baseButton =
+    "w-full rounded-3xl border px-6 font-semibold transition-colors duration-200 hover:bg-gray-50 hover:border-gray-300";
+
+  return (
+    <main className="flex min-h-screen justify-center px-6 pt-16">
+  <div className="w-full max-w-[96rem]">
+       <div className="mb-2 flex items-center justify-center gap-4">
+  <h1 className="text-3xl font-bold">Student dashboard</h1>
+
+  <button
+  type="button"
+  onClick={() => {
+    resetGame();
+    setScreen("game");
+  }}
+  className="rounded-xl border px-4 py-1.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+>
+  Join table
+</button>
+
+  <button
+    type="button"
+    onClick={() => setScreen("role")}
+    className="rounded-xl border px-4 py-1.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+  >
+    Title screen
+  </button>
+</div>
+
+        <p className="mb-8 text-center text-sm text-black/60">
+          Same aesthetic for now — we’ll plug in real widgets next.
+        </p>
+
+        <div className="grid gap-4">
+          <div className="rounded-3xl border bg-white p-6 w-full px-10">
+
+  <div className="grid grid-cols-2 gap-6">
+  <div className="text-xs font-semibold uppercase tracking-wide text-black/50">
+  Other students
+</div>
+
+<div className="text-xs font-semibold uppercase tracking-wide text-black/50">
+  Professionals
+</div>
+
+    {/* ---------- Students column ---------- */}
+    
+    <div className="flex flex-col gap-3">
+  <button
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black transition-colors hover:bg-gray-50"
+  >
+    Browse students
+  </button>
+
+  <div className="max-h-[70vh] overflow-y-auto pr-4 flex flex-col gap-3">
+    {otherStudents.map((s, i) => (
+  <div
+    key={i}
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black flex items-center justify-between"
+  >
+    <span>
+      {s.firstName} {" • "} {s.lastName} {" • "}
+      {s.year} {" • "}
+      {s.major}
+    </span>
+
+    {i > 0 && (
+      <button className={connectButtonClass}>
+        Connect
+      </button>
+    )}
+  </div>
+))}
+  </div>
+</div>
+
+    {/* ---------- Professionals column ---------- */}
+    
+    <div className="flex flex-col gap-3">
+  <button
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black transition-colors hover:bg-gray-50"
+  >
+    View professionals
+  </button>
+
+  <div className="max-h-[70vh] overflow-y-auto pr-4 flex flex-col gap-3">
+    {otherProfessionals.map((p, i) => (
+  <div
+    key={i}
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black flex items-center justify-between"
+  >
+    <span>
+      {p.firstName} {p.lastName} {" • "}
+      {p.company} {" • "}
+      {p.workTitle}
+    </span>
+
+    <button className={connectButtonClass}>
+      Connect
+    </button>
+  </div>
+))}
+
+  </div>
+</div>
+
+  </div>
+</div>
+
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/* ---------- professional dashboard ---------- */
+
+if (screen === "professionalDashboard" && seatedRole === "professional") {
+  const baseButton =
+    "w-full rounded-3xl border px-6 font-semibold transition-colors duration-200 hover:bg-gray-50 hover:border-gray-300";
+
+  return (
+    <main className="flex min-h-screen justify-center px-6 pt-16">
+  <div className="w-full max-w-[96rem]">
+       <div className="mb-2 flex items-center justify-center gap-4">
+  <h1 className="text-3xl font-bold">Professional Dashboard</h1>
+
+  <button
+  type="button"
+  onClick={() => {
+    resetGame();
+    setScreen("game");
+  }}
+  className="rounded-xl border px-4 py-1.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+>
+  Join table
+</button>
+
+  <button
+    type="button"
+    onClick={() => setScreen("role")}
+    className="rounded-xl border px-4 py-1.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+  >
+    Title screen
+  </button>
+</div>
+
+        <p className="mb-8 text-center text-sm text-black/60">
+          Same aesthetic for now — we’ll plug in real widgets next.
+        </p>
+
+        <div className="grid gap-4">
+          <div className="rounded-3xl border bg-white p-6 w-full px-10">
+
+  <div className="grid grid-cols-2 gap-6">
+  <div className="text-xs font-semibold uppercase tracking-wide text-black/50">
+  Other Professionals
+</div>
+
+<div className="text-xs font-semibold uppercase tracking-wide text-black/50">
+  Students
+</div>
+
+    {/* ---------- ProfD Professionals column ---------- */}
+<div className="flex flex-col gap-3">
+  <button
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black transition-colors hover:bg-gray-50"
+  >
+    View Professionals
+  </button>
+
+  <div className="max-h-[70vh] overflow-y-auto pr-2 flex flex-col gap-3">
+    {otherProfessionals.map((p, i) => (
+  <div
+    key={i}
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black flex items-center justify-between"
+  >
+    <span>
+      {p.firstName} {p.lastName} {" • "}
+      {p.company} {" • "}
+      {p.workTitle}
+    </span>
+
+    {i > 0 && (
+      <button className={connectButtonClass}>
+        Connect
+      </button>
+    )}
+  </div>
+))}
+
+  </div>
+</div>
+
+    {/* ---------- ProfD Students column ---------- */}
+<div className="flex flex-col gap-3">
+  <button
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black transition-colors hover:bg-gray-50"
+  >
+    Browse Students
+  </button>
+
+  <div className="max-h-[70vh] overflow-y-auto pr-2 flex flex-col gap-3">
+    {otherStudents.map((s, i) => (
+  <div
+    key={i}
+    className="w-full rounded-2xl border border-black bg-white px-5 py-4 font-semibold text-black flex items-center justify-between"
+  >
+    <span>
+      {s.firstName} {s.lastName} {" • "}
+      {s.year} {" • "}
+      {s.major}
+    </span>
+
+    <button className={connectButtonClass}>
+      Connect
+    </button>
+  </div>
+))}
+
+  </div>
+</div>
+  </div>
+</div>
+
+        </div>
+      </div>
+    </main>
+  );
+}
+
   /* ---------- game view ---------- */
+
+  if (screen !== "game" || !seatedRole) return null;
 
   const dealerChipTop =
     "absolute -bottom-3 -right-3 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-[20px] font-bold text-black shadow-sm";
@@ -1503,20 +2296,6 @@ const displayedHistoryBoard = viewingSnapshot
 
   return (
     <>
-      <ConfirmModal
-  open={showConfirm}
-  title="Change role?"
-  message="Are you sure you would like to change role? The game will stop and new cards will be dealt. If you reset, your stack sizes will also reset."
-  cancelText="Go back"
-  confirmText="Change role"
-  onCancel={() => setShowConfirm(false)}
-  onConfirm={() => {
-    clearTimers();
-    setShowConfirm(false);
-    setSeatedRole(null);
-    setCards(null);
-  }}
-/>
 
 <ConfirmModal
   open={showResetConfirm}
@@ -1531,67 +2310,88 @@ const displayedHistoryBoard = viewingSnapshot
   }}
 />
 
-      <main className="flex min-h-screen items-center justify-center px-6">
+      <main className="relative flex min-h-screen items-center justify-center px-6">
+
+      {gameOver && !playAgainRequested && (
+  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+    <button
+      onClick={() => setPlayAgainRequested(true)}
+      className="rounded-2xl border border-black bg-white px-6 py-2 text-sm font-semibold text-black shadow-sm hover:bg-gray-50"
+    >
+      Play Again?
+    </button>
+  </div>
+)}
+
+{gameOver && playAgainRequested && (
+  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 rounded-2xl border border-black bg-white px-6 py-2 text-sm font-semibold text-black shadow-sm">
+    Invited &quot;Opponent&quot; to play again, waiting for &quot;Opponent&apos;s&quot; response...
+  </div>
+)}
+
+
+      {blindNotice && !gameOver ? (
+  <div className="absolute top-6 left-1/2 -translate-x-1/2 text-sm font-semibold text-white">
+    {blindNotice}
+  </div>
+) : null}
         <div className="w-full max-w-6xl">
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-white">Seated</h1>
+              <h1 className="text-2xl font-bold text-white">TEMP TITLE</h1>
               <div className="text-sm text-white opacity-80 tabular-nums">
                 Pot: {formatBB(roundToHundredth(game.pot + game.bets.top + game.bets.bottom))}{" "}
                 BB <span className="opacity-60">·</span> {streetLabel}{" "}
                 <span className="opacity-60">·</span>{" "}
                 <span className="opacity-90">
-                  {handResult.status === "playing"
-                    ? toAct === "bottom"
-                      ? "Your turn"
-                      : "Opponent thinking…"
-                    : "Hand ended (next hand in 10s)"}
-                </span>
+  {handResult.status === "playing"
+    ? toAct === "bottom"
+      ? "Your turn"
+      : "Opponent thinking…"
+    : gameOver
+      ? (game.stacks.bottom <= 0
+          ? "Game over — Opponent wins"
+          : "Game over — You win")
+      : "Hand ended (next hand in 5s)"}
+</span>
               </div>
               {handResult.message ? (
                 <div className="mt-1 text-sm text-white opacity-90">{handResult.message}</div>
               ) : null}
             </div>
 
-            {handResult.status === "ended" &&
- handResult.reason === "showdown" &&
- showdownFirst === "top" ? (
-  <div className="mt-2 flex items-center gap-3 text-white">
-    <div className="text-sm opacity-80">Opponent showed. Your hand:</div>
-
-    <button
-      className="rounded-xl border border-white/20 bg-white/10 px-3 py-1 text-sm hover:bg-white/20"
-      onClick={() => setYouMucked(false)}
-    >
-      Show
-    </button>
-
-    <button
-      className="rounded-xl border border-white/20 bg-white/10 px-3 py-1 text-sm hover:bg-white/20"
-      onClick={() => setYouMucked(true)}
-    >
-      Don’t show
-    </button>
-  </div>
-) : null}
-
             <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setShowResetConfirm(true)}
-                className="text-sm text-white underline opacity-80 hover:opacity-100"
-              >
-                Reset game
-              </button>
+  <button
+    type="button"
+    onClick={() => setShowResetConfirm(true)}
+    className="text-sm text-white underline opacity-80 hover:opacity-100"
+  >
+    Reset game
+  </button>
 
-              <button
-                type="button"
-                onClick={() => setShowConfirm(true)}
-                className="text-sm text-white underline opacity-80 hover:opacity-100"
-              >
-                Change role
-              </button>
-            </div>
+  {studentProfile.email && (
+  <button
+    type="button"
+    onClick={() =>
+      setScreen(seatedRole === "professional" ? "professionalDashboard" : "dashboard")
+    }
+    className="text-sm text-white underline opacity-80 hover:opacity-100"
+  >
+    Dashboard
+  </button>
+)}
+
+  <button
+    type="button"
+    onClick={() => {
+      clearTimers();          // stop opponent + next-hand timers
+      setScreen("role");     // go back to title screen
+    }}
+    className="text-sm text-white underline opacity-80 hover:opacity-100"
+  >
+    Title screen
+  </button>
+</div>
           </div>
 
           {/* ACTION LOG pinned left + TABLE centered */}
@@ -1643,12 +2443,27 @@ const displayedHistoryBoard = viewingSnapshot
 
   {/* Snapshot extras (ONLY when viewing history) */}
 {viewingSnapshot ? (
-  <div className="mb-3 flex items-center gap-4">
-    <div className="text-xs text-white/70 whitespace-nowrap">
-      You had:{" "}
-      {renderActionText(
-        `${cardStr(viewingSnapshot.heroCards[0])} ${cardStr(viewingSnapshot.heroCards[1])}`
-      )}
+  <div className="mb-3 flex items-start gap-4">
+    <div className="flex flex-col gap-1 text-xs text-white/70 whitespace-nowrap">
+      <div>
+        You:{" "}
+        {renderActionText(
+          `${cardStr(viewingSnapshot.heroCards[0])} ${cardStr(viewingSnapshot.heroCards[1])}`
+        )}
+      </div>
+
+      <div>
+  Opponent:{" "}
+  {viewingSnapshot.oppShown
+    ? renderActionText(
+        `${cardStr(viewingSnapshot.oppCards[0])} ${cardStr(viewingSnapshot.oppCards[1])}`
+      )
+    : viewingSnapshot.log.some(
+        (it) => it.seat === "top" && /fold/i.test(it.text)
+      )
+    ? "Folded"
+    : "Mucked"}
+    </div>
     </div>
 
     <div className="flex items-center gap-2 min-w-0 overflow-hidden">
@@ -1857,7 +2672,6 @@ const displayedHistoryBoard = viewingSnapshot
   )}
 </button>
 
-
                 <button
   type="button"
   onClick={() => actBetRaiseTo("bottom", safeBetSize)}
@@ -1881,7 +2695,18 @@ const displayedHistoryBoard = viewingSnapshot
 }
 
 // Next time:
-// Change role text should reflect something more concise 
+// If player accidentally disconnects from game make it so that progress is saved 
 // Make it compatible with ipad and iphone 
+// Add sounds
+// Coming soon Match history • Stats • Notes • Session goals
+// make it so that its also non-student friendly 
+// Update it in Repository?
+// The whole screen moves every new hand so change it so that it stays put (I think its cause the real time updated action line shows up and disappears)
+// Make it so that you have the option to show cards anytime after a hand ends
+// think about whether the connection is successful through linkedin or my app itself? which one would it be easier? 
+
+// Connect people's names to their Linkedin? Have like a (Connect your Linkedin and then the name becomes a hyperlink?)
+
+// PRETTY MUCH READY TO START THE BACKEND? THE ACTUAL TESTING WITH REAL PEOPLE
 
 // Ask Wilson if he would like to do marketing for this 
