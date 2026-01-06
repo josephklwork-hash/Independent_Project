@@ -3695,7 +3695,7 @@ const displayedHistoryBoard = viewingSnapshot
                 {dealerSeat === "top" && <div className={dealerChipTop}>D</div>}
 
                 <div className="absolute -bottom-14 left-1/2 -translate-x-1/2">
-                  <BetChip amount={game.bets.top} label={topLabel} />
+                  <BetChip amount={game.bets.top} label={mySeat === "bottom" ? topLabel : bottomLabel} />
                 </div>
 
                 <div className="flex h-full flex-col justify-center">
@@ -3738,7 +3738,7 @@ const displayedHistoryBoard = viewingSnapshot
                 {dealerSeat === "bottom" && <div className={dealerChipBottom}>D</div>}
 
                 <div className="absolute -top-14 left-1/2 -translate-x-1/2">
-                  <BetChip amount={game.bets.bottom} label={bottomLabel} />
+                  <BetChip amount={game.bets.bottom} label={mySeat === "bottom" ? bottomLabel : topLabel} />
                 </div>
 
                 <div className="flex h-full flex-col justify-center">
