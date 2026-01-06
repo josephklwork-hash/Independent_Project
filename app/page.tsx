@@ -1427,9 +1427,14 @@ function applyRemoteReset(p: {
 
     // multiplayer: host deals + broadcasts, joiner waits for SYNC
     if (isHost) {
-      const next = drawUniqueCards(9);
-      setCards(next);
-      mpSend({ event: "SYNC", kind: "DEAL", cards: next });
+      // Small delay to ensure joiner's channel is subscribed
+      const timer = setTimeout(() => {
+        const next = drawUniqueCards(9);
+        setCards(next);
+        mpSend({ event: "SYNC", kind: "DEAL", cards: next });
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
   }, [seatedRole, handId, gameSession, multiplayerActive, isHost]);
 
