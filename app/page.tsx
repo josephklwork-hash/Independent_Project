@@ -1815,9 +1815,6 @@ allInCallThisHandRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seatedRole, handId, dealerSeat, gameSession]);
 
-  const myLabel = amIDealer ? "SB" : "BB";
-  const oppLabel = amIDealer ? "BB" : "SB";
-
   const isBottomTurn = seatedRole && toAct === mySeat && handResult.status === "playing";
 
  useEffect(() => {
