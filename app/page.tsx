@@ -1135,6 +1135,23 @@ useEffect(() => {
 
   const nonDealerSeat: Seat = dealerSeat === "top" ? "bottom" : "top";
 
+  // Perspective helpers: map game seats to screen positions
+  const myActualSeat = mySeat; // "bottom" for host, "top" for joiner
+  const oppActualSeat: Seat = mySeat === "bottom" ? "top" : "bottom";
+  
+  // Game state from my perspective
+  const myStack = game.stacks[myActualSeat];
+  const oppStack = game.stacks[oppActualSeat];
+  const myBet = game.bets[myActualSeat];
+  const oppBet = game.bets[oppActualSeat];
+  
+  const amIDealer = dealerSeat === myActualSeat;
+  const myPositionLabel = amIDealer ? "SB/D" : "BB";
+  const oppPositionLabel = amIDealer ? "BB" : "SB/D";
+  
+  const myLabel = amIDealer ? "SB" : "BB";
+  const oppLabel = amIDealer ? "BB" : "SB";
+
   const [handStartStacks, setHandStartStacks] = useState<{ top: number; bottom: number }>({
   top: STARTING_STACK_BB,
   bottom: STARTING_STACK_BB,
