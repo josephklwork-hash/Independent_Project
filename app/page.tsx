@@ -1688,25 +1688,33 @@ allInCallThisHandRef.current = false;
     setBetSize(roundToHundredth(Math.max(0, value)));
   }
 
-  const oppRaw1 = cards?.[0];
-  const oppRaw2 = cards?.[1];
+  // Raw cards from deck: [0,1] = top seat, [2,3] = bottom seat
+  const topRaw1 = cards?.[0];
+  const topRaw2 = cards?.[1];
+  const bottomRaw1 = cards?.[2];
+  const bottomRaw2 = cards?.[3];
 
-const [oppA, oppB] = useMemo(() => {
-  if (!oppRaw1 || !oppRaw2) return [undefined, undefined] as const;
-  const a = RANK_TO_VALUE[oppRaw1.rank];
-  const b = RANK_TO_VALUE[oppRaw2.rank];
-  return a >= b ? ([oppRaw1, oppRaw2] as const) : ([oppRaw2, oppRaw1] as const);
-}, [oppRaw1, oppRaw2]);
+  // Opponent cards (from my perspective)
+  const oppRaw1 = mySeat === "bottom" ? topRaw1 : bottomRaw1;
+  const oppRaw2 = mySeat === "bottom" ? topRaw2 : bottomRaw2;
 
-  const youRaw1 = cards?.[2];
-  const youRaw2 = cards?.[3];
+  const [oppA, oppB] = useMemo(() => {
+    if (!oppRaw1 || !oppRaw2) return [undefined, undefined] as const;
+    const a = RANK_TO_VALUE[oppRaw1.rank];
+    const b = RANK_TO_VALUE[oppRaw2.rank];
+    return a >= b ? ([oppRaw1, oppRaw2] as const) : ([oppRaw2, oppRaw1] as const);
+  }, [oppRaw1, oppRaw2]);
+
+  // My cards (from my perspective)
+  const youRaw1 = mySeat === "bottom" ? bottomRaw1 : topRaw1;
+  const youRaw2 = mySeat === "bottom" ? bottomRaw2 : topRaw2;
 
   const [youC, youD] = useMemo(() => {
-  if (!youRaw1 || !youRaw2) return [undefined, undefined] as const;
-  const a = RANK_TO_VALUE[youRaw1.rank];
-  const b = RANK_TO_VALUE[youRaw2.rank];
-  return a >= b ? ([youRaw1, youRaw2] as const) : ([youRaw2, youRaw1] as const);
-}, [youRaw1, youRaw2]);
+    if (!youRaw1 || !youRaw2) return [undefined, undefined] as const;
+    const a = RANK_TO_VALUE[youRaw1.rank];
+    const b = RANK_TO_VALUE[youRaw2.rank];
+    return a >= b ? ([youRaw1, youRaw2] as const) : ([youRaw2, youRaw1] as const);
+  }, [youRaw1, youRaw2]);
 
   const board = cards ? cards.slice(4, 9) : [];
 
@@ -1810,7 +1818,7 @@ const [oppA, oppB] = useMemo(() => {
   const topLabel = dealerSeat === "top" ? "SB" : "BB";
   const bottomLabel = dealerSeat === "bottom" ? "SB" : "BB";
 
-  const isBottomTurn = seatedRole && toAct === "bottom" && handResult.status === "playing";
+  const isBottomTurn = seatedRole && toAct === mySeat && handResult.status === "playing";
 
  useEffect(() => {
   function onKeyDown(e: KeyboardEvent) {
