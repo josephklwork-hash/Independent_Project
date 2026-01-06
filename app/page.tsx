@@ -1092,7 +1092,7 @@ if (
 
   }
 
-    function resolveShowdown() {
+    function resolveShowdown(showdownFirstOverride: Seat | null = null) {
   const top7 = [oppA!, oppB!, ...board] as Card[];
   const bottom7 = [youC!, youD!, ...board] as Card[];
 
@@ -1109,7 +1109,7 @@ if (
   // Show order:
   // - If there was betting on the river, the last aggressor on the river shows first.
   // - If it was checked through, out-of-position (non-dealer) shows first.
-  const firstToShow: Seat = streetBettor ?? nonDealerSeat;
+  const firstToShow: Seat = (showdownFirstOverride ?? streetBettor ?? nonDealerSeat) as Seat;
   const secondToShow: Seat = firstToShow === "top" ? "bottom" : "top";
   setShowdownFirst(firstToShow);
 
