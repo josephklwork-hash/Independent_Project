@@ -3692,7 +3692,7 @@ const displayedHistoryBoard = viewingSnapshot
             <div className="mx-auto flex w-fit flex-col items-center gap-[92px]">
               {/* TOP SEAT */}
               <div className="relative h-[260px] w-[216px] translate-y-6 rounded-3xl border bg-black/50 text-center">
-                {dealerSeat === "top" && <div className={dealerChipTop}>D</div>}
+                {(mySeat === "bottom" ? dealerSeat === "top" : dealerSeat === "bottom") && <div className={dealerChipTop}>D</div>}
 
                 <div className="absolute -bottom-14 left-1/2 -translate-x-1/2">
                   <BetChip amount={game.bets.top} label={mySeat === "bottom" ? topLabel : bottomLabel} />
@@ -3735,7 +3735,7 @@ const displayedHistoryBoard = viewingSnapshot
 
               {/* BOTTOM SEAT */}
               <div className="relative h-[260px] w-[216px] -translate-y-6 rounded-3xl border bg-black/50 text-center">
-                {dealerSeat === "bottom" && <div className={dealerChipBottom}>D</div>}
+                {(mySeat === "bottom" ? dealerSeat === "bottom" : dealerSeat === "top") && <div className={dealerChipBottom}>D</div>}
 
                 <div className="absolute -top-14 left-1/2 -translate-x-1/2">
                   <BetChip amount={game.bets.bottom} label={mySeat === "bottom" ? bottomLabel : topLabel} />
