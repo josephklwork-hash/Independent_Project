@@ -1815,12 +1815,8 @@ allInCallThisHandRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seatedRole, handId, dealerSeat, gameSession]);
 
-  // Labels from my perspective
-  const myLabel = dealerSeat === mySeat ? "SB" : "BB";
-  const oppLabel = dealerSeat === mySeat ? "BB" : "SB";
-  
-  const topLabel = mySeat === "bottom" ? oppLabel : myLabel;
-  const bottomLabel = mySeat === "bottom" ? myLabel : oppLabel;
+  const myLabel = amIDealer ? "SB" : "BB";
+  const oppLabel = amIDealer ? "BB" : "SB";
 
   const isBottomTurn = seatedRole && toAct === mySeat && handResult.status === "playing";
 
@@ -3690,19 +3686,19 @@ const displayedHistoryBoard = viewingSnapshot
 
             {/* CENTER: TABLE */}
             <div className="mx-auto flex w-fit flex-col items-center gap-[92px]">
-              {/* TOP SEAT */}
+              {/* TOP SEAT (Opponent) */}
               <div className="relative h-[260px] w-[216px] translate-y-6 rounded-3xl border bg-black/50 text-center">
-                {(mySeat === "bottom" ? dealerSeat === "top" : dealerSeat === "bottom") && <div className={dealerChipTop}>D</div>}
+                {!amIDealer && <div className={dealerChipTop}>D</div>}
 
                 <div className="absolute -bottom-14 left-1/2 -translate-x-1/2">
-                  <BetChip amount={game.bets.top} label={mySeat === "bottom" ? topLabel : bottomLabel} />
+                  <BetChip amount={oppBet} label={oppLabel} />
                 </div>
 
                 <div className="flex h-full flex-col justify-center">
                   <div className="-mt-3 text-sm uppercase text-white opacity-60">Opponent</div>
                   <div className="mt-2 text-sm text-white">
                     Stack:{" "}
-                    <span className="font-semibold tabular-nums">{formatBB(game.stacks.top)}bb</span>
+                    <span className="font-semibold tabular-nums">{formatBB(oppStack)}bb</span>
                   </div>
 
                   <div className="mt-4 flex justify-center gap-3">
@@ -3733,12 +3729,12 @@ const displayedHistoryBoard = viewingSnapshot
   </div>
 </div>
 
-              {/* BOTTOM SEAT */}
+              {/* BOTTOM SEAT (You) */}
               <div className="relative h-[260px] w-[216px] -translate-y-6 rounded-3xl border bg-black/50 text-center">
-                {(mySeat === "bottom" ? dealerSeat === "bottom" : dealerSeat === "top") && <div className={dealerChipBottom}>D</div>}
+                {amIDealer && <div className={dealerChipBottom}>D</div>}
 
                 <div className="absolute -top-14 left-1/2 -translate-x-1/2">
-                  <BetChip amount={game.bets.bottom} label={mySeat === "bottom" ? bottomLabel : topLabel} />
+                  <BetChip amount={myBet} label={myLabel} />
                 </div>
 
                 <div className="flex h-full flex-col justify-center">
@@ -3748,7 +3744,7 @@ const displayedHistoryBoard = viewingSnapshot
                   <div className="mt-2 text-sm text-white">
                     Stack:{" "}
                     <span className="font-semibold tabular-nums">
-                      {formatBB(game.stacks.bottom)}bb
+                      {formatBB(myStack)}bb
                     </span>
                   </div>
 
