@@ -1815,8 +1815,12 @@ allInCallThisHandRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seatedRole, handId, dealerSeat, gameSession]);
 
-  const topLabel = dealerSeat === "top" ? "SB" : "BB";
-  const bottomLabel = dealerSeat === "bottom" ? "SB" : "BB";
+  // Labels from my perspective
+  const myLabel = dealerSeat === mySeat ? "SB" : "BB";
+  const oppLabel = dealerSeat === mySeat ? "BB" : "SB";
+  
+  const topLabel = mySeat === "bottom" ? oppLabel : myLabel;
+  const bottomLabel = mySeat === "bottom" ? myLabel : oppLabel;
 
   const isBottomTurn = seatedRole && toAct === mySeat && handResult.status === "playing";
 
@@ -3419,11 +3423,11 @@ const viewingSnapshot =
 
   const heroPosLabel = viewingSnapshot
   ? viewingSnapshot.heroPos
-  : dealerSeat === "bottom" ? "SB/D" : "BB";
+  : dealerSeat === mySeat ? "SB/D" : "BB";
 
 const oppPosLabel = viewingSnapshot
   ? viewingSnapshot.oppPos
-  : dealerSeat === "top" ? "SB/D" : "BB";
+  : dealerSeat === mySeat ? "BB" : "SB/D";
 
 const displayedActionLog = viewingSnapshot ? viewingSnapshot.log : actionLog;
 
