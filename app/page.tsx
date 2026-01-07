@@ -1300,10 +1300,9 @@ setGamePin(gameRow.pin);
 setGameId(gameRow.id);
 setMultiplayerActive(true);
 
-// enter the game screen + fresh reset
+// enter the game screen and wait for host's RESET
 clearTimers();
-setMySeat("top");  // ← must be BEFORE resetGame so isHost is correct
-resetGame();
+setMySeat("top");
 setSeatedRole((prev) => prev ?? "student");
 setScreen("game");
 }
