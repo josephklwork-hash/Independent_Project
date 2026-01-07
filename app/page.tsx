@@ -1845,10 +1845,10 @@ allInCallThisHandRef.current = false;
 
         return nextGame;
       });
-
-      // who acts first preflop = dealer
-      setToAct(dealerSeat);
     }
+
+    // who acts first preflop = dealer
+    setToAct(dealerSeat);
 
     setTimeout(() => {
   blindsPostedRef.current = false;
