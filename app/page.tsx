@@ -861,7 +861,6 @@ if (payload.event === "ACTION") {
           cards,
           handLogHistory,
           actionLog: actionLogRef.current,
-          actionSeq,
         });
         return;
       }
