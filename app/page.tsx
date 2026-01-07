@@ -859,6 +859,7 @@ if (payload.event === "ACTION") {
           endedBoardSnapshot,
           blindsPosted: blindsPostedRef.current,
           cards,
+          handLogHistory,
         });
         return;
       }
@@ -887,7 +888,14 @@ if (payload.event === "ACTION") {
   actionSeq: (payload.actionSeq as number) ?? 0,
 });
 
-return; 
+// Also sync hand history from host
+if (Array.isArray(payload.handLogHistory)) {
+  suppressMpRef.current = true;
+  setHandLogHistory(payload.handLogHistory as HandLogSnapshot[]);
+  suppressMpRef.current = false;
+}
+
+return;
 }
 
      if (payload.kind === "DEAL" && Array.isArray(payload.cards)) {
