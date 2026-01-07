@@ -852,7 +852,7 @@ if (payload.event === "ACTION") {
   payload.game.stacks &&
   payload.game.bets
 ) {
-  applyRemoteReset({
+    applyRemoteReset({
     dealerOffset: payload.dealerOffset as 0 | 1,
     gameSession: payload.gameSession as number,
     handId: payload.handId as number,
@@ -862,20 +862,17 @@ if (payload.event === "ACTION") {
     lastRaiseSize: payload.lastRaiseSize as number,
     endedBoardSnapshot: payload.endedBoardSnapshot as number,
     blindsPosted: payload.blindsPosted as boolean,
+    cards: (Array.isArray(payload.cards) ? (payload.cards as Card[]) : null),
   });
   return;
 }
 
-      if (payload.kind === "DEAL" && Array.isArray(payload.cards)) {
-        if (payload.handId !== handId || payload.gameSession !== gameSession) {
-          console.warn("Ignoring stale DEAL message");
-          return;
-        }
-        suppressMpRef.current = true;
-        setCards(payload.cards as Card[]);
-        suppressMpRef.current = false;
-        return;
-      }
+     if (payload.kind === "DEAL" && Array.isArray(payload.cards)) {
+  suppressMpRef.current = true;
+  setCards(payload.cards as Card[]);
+  suppressMpRef.current = false;
+  return;
+}
 
       if (payload.kind === "STREET_ADVANCE" && typeof payload.nextStreet === "number" && payload.firstToAct) {
         suppressMpRef.current = true;
@@ -1347,7 +1344,9 @@ function applyRemoteReset(p: {
   lastRaiseSize: number;
   endedBoardSnapshot: number;
   blindsPosted: boolean;
+  cards: Card[] | null;
 }) {
+
   suppressMpRef.current = true;
 
   clearTimers();
@@ -1361,6 +1360,8 @@ function applyRemoteReset(p: {
   setGame(p.game);
   gameRef.current = p.game;
   streetRef.current = 0;
+
+  setCards(p.cards);
 
   setHandResult({ status: "playing", winner: null, reason: null, message: "" });
   setActionLog([]);
@@ -1714,6 +1715,10 @@ setGame(freshGame);
 gameRef.current = freshGame;
 streetRef.current = 0;
 
+// host deals immediately on reset so joiner can't miss cards
+const nextCards = drawUniqueCards(9);
+setCards(nextCards);
+
     setHandResult({ status: "playing", winner: null, reason: null, message: "" });
     setActionLog([]);
     actionLogRef.current = [];
@@ -1737,7 +1742,7 @@ streetRef.current = 0;
   const next = s + 1;
 
   if (multiplayerActive && isHost && !suppressMpRef.current) {
-  mpSend({
+    mpSend({
   event: "SYNC",
   kind: "RESET",
   dealerOffset: nextDealerOffset,
@@ -1749,7 +1754,9 @@ streetRef.current = 0;
   lastRaiseSize: BB,
   endedBoardSnapshot: 0,
   blindsPosted: false,
+  cards: nextCards,
 });
+
 }
 
   return next;
