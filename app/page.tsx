@@ -1380,56 +1380,10 @@ function applyRemoteReset(p: {
   cards: Card[] | null;
   actionLog: ActionLogItem[];
   actionSeq: number;
-}) {
-
-  suppressMpRef.current = true;
-
-  clearTimers();
-
-  gameOverRef.current = false;
-  setGameOver(false);
-  setPlayAgainRequested(false);
-
-  setDealerOffset(p.dealerOffset);
-
-  setGame(p.game);
-  gameRef.current = p.game;
-  streetRef.current = 0;
-
-  setCards(p.cards);
-
-  setHandResult({ status: "playing", winner: null, reason: null, message: "" });
-  setActionLog([]);
-  actionLogRef.current = [];
-  setStreet(0);
-  setChecked({ top: false, bottom: false });
-  setLastAggressor(null);
-  setLastToActAfterAggro(null);
-  setActionsThisStreet(0);
-  setSawCallThisStreet(false);
-  setStreetBettor(null);
-  setShowdownFirst(null);
-  setOppRevealed(false);
-  setYouMucked(false);
-
-  setBetSize(2);
-  setHandLogHistory([]);
-  setLogViewOffset(0);
-
-  setGameSession(p.gameSession);
-  setHandId(p.handId);
-  setDealerOffset(p.dealerOffset);
-  setToAct(p.toAct);
-  setHandStartStacks(p.handStartStacks);
-  setLastRaiseSize(p.lastRaiseSize);
-  setEndedBoardSnapshot(p.endedBoardSnapshot);
-  blindsPostedRef.current = p.blindsPosted;
-  actionSequenceRef.current = p.actionSeq;
-
-  suppressMpRef.current = false;
-}
+}) 
 
 {
+
 
   suppressMpRef.current = true;
 
