@@ -1814,39 +1814,41 @@ allInCallThisHandRef.current = false;
     const topBlind = dealerSeat === "top" ? SB : BB;
     const bottomBlind = dealerSeat === "bottom" ? SB : BB;
 
-    setGame((prev: GameState) => {
-  const isLevelChangeHand = handId !== 0 && handId % 10 === 0; // hand 11, 21, 31...
-  const mult = isLevelChangeHand ? 0.75 : 1;
+    if (!multiplayerActive || isHost) {
+      setGame((prev: GameState) => {
+        const isLevelChangeHand = handId !== 0 && handId % 10 === 0; // hand 11, 21, 31...
+        const mult = isLevelChangeHand ? 0.75 : 1;
 
-  const topScaled = roundToHundredth(prev.stacks.top * mult);
-  const bottomScaled = roundToHundredth(prev.stacks.bottom * mult);
+        const topScaled = roundToHundredth(prev.stacks.top * mult);
+        const bottomScaled = roundToHundredth(prev.stacks.bottom * mult);
 
-  const nextGame = {
-  pot: 0,
-  bets: {
-    top: roundToHundredth(topBlind),
-    bottom: roundToHundredth(bottomBlind),
-  },
-  stacks: {
-    top: roundToHundredth(Math.max(0, topScaled - topBlind)),
-    bottom: roundToHundredth(Math.max(0, bottomScaled - bottomBlind)),
-  },
-};
+        const nextGame = {
+          pot: 0,
+          bets: {
+            top: roundToHundredth(topBlind),
+            bottom: roundToHundredth(bottomBlind),
+          },
+          stacks: {
+            top: roundToHundredth(Math.max(0, topScaled - topBlind)),
+            bottom: roundToHundredth(Math.max(0, bottomScaled - bottomBlind)),
+          },
+        };
 
-  if (multiplayerActive && isHost && !suppressMpRef.current) {
-    mpSend({
-      event: "SYNC",
-      kind: "POST_BLINDS",
-      game: nextGame,
-      toAct: dealerSeat,
-    });
-  }
+        if (multiplayerActive && isHost && !suppressMpRef.current) {
+          mpSend({
+            event: "SYNC",
+            kind: "POST_BLINDS",
+            game: nextGame,
+            toAct: dealerSeat,
+          });
+        }
 
-  return nextGame;
-});
+        return nextGame;
+      });
 
-    // who acts first preflop = dealer
-    setToAct(dealerSeat);
+      // who acts first preflop = dealer
+      setToAct(dealerSeat);
+    }
 
     setTimeout(() => {
   blindsPostedRef.current = false;
