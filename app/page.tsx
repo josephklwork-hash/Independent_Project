@@ -764,6 +764,7 @@ const [otherProfessionals, setOtherProfessionals] = useState<
   const actionLogRef = useRef<ActionLogItem[]>([]);
   const endedStreetRef = useRef<Street>(0);
   const blindsPostedRef = useRef(false);
+  const blindsKeyRef = useRef<string | null>(null);
   const gameRef = useRef(game);
   const streetRef = useRef<Street>(street);
   const actionSequenceRef = useRef(0);
@@ -814,12 +815,17 @@ useEffect(() => {
       const nextStatus = payload?.new?.status;
 
       if (nextStatus === "active") {
-        setMultiplayerActive(true);
-        clearTimers();
-        resetGame();
-        setSeatedRole((prev) => prev ?? "student");
-        setScreen("game");
-      }
+  setMultiplayerActive(true);
+  clearTimers();
+
+  // Only the host initializes the game state (dealerOffset/cards/handId/gameSession).
+  if (isHost) {
+    resetGame();
+  }
+
+  setSeatedRole((prev) => prev ?? "student");
+  setScreen("game");
+}
     }
   );
 
@@ -828,13 +834,12 @@ useEffect(() => {
     if (!payload) return;
     if (payload.sender && payload.sender === (sbUser?.id ?? null)) return;
 
-    // ACTION: apply the action coming from the other device
-    if (payload.event === "ACTION") {
-      suppressMpRef.current = true;
-      applyActionFromSeat(payload.seat as Seat, payload.action as GameAction);
-      suppressMpRef.current = false;
-      return;
-    }
+    // ACTION: only the host applies actions (host is authoritative)
+if (payload.event === "ACTION") {
+  if (!isHost) return;
+  applyActionFromSeat(payload.seat as Seat, payload.action as GameAction);
+  return;
+}
 
     // SYNC: reset / deal
     if (payload.event === "SYNC") {
@@ -1045,14 +1050,31 @@ useEffect(() => {
       }
 
       if (payload.kind === "POST_BLINDS" && payload.game && payload.toAct) {
-        console.log("POST_BLINDS received:", payload.game);
-        suppressMpRef.current = true;
-        setGame(payload.game as GameState);
-        gameRef.current = payload.game as GameState;
-        setToAct(payload.toAct as Seat);
-        suppressMpRef.current = false;
-        return;
-      }
+  suppressMpRef.current = true;
+
+  // reset per-hand state (joiner mirrors host)
+  setHandResult({ status: "playing", winner: null, reason: null, message: "" });
+  allInCallThisHandRef.current = false;
+  setActionLog([]);
+  actionLogRef.current = [];
+  setStreet(0);
+  setChecked({ top: false, bottom: false });
+  setLastAggressor(null);
+  setLastToActAfterAggro(null);
+  setSawCallThisStreet(false);
+  setActionsThisStreet(0);
+  setLastRaiseSize(BB);
+  blindsPostedRef.current = false;
+  setBetSize(2);
+
+  // apply the posted-blinds chip state + whose turn it is
+  setGame(payload.game as GameState);
+  gameRef.current = payload.game as GameState;
+  setToAct(payload.toAct as Seat);
+
+  suppressMpRef.current = false;
+  return;
+}
 
       if (payload.kind === "BLINDS_POSTED") {
         suppressMpRef.current = true;
@@ -1787,11 +1809,16 @@ allInCallThisHandRef.current = false;
 }, [youC, youD, board, street]);
 
   /* post blinds at start of each hand */
-  useEffect(() => {
-    if (!seatedRole) return;
-    
-    if (!multiplayerActive || isHost) {
-      setHandStartStacks(gameRef.current.stacks);
+useEffect(() => {
+  if (!seatedRole) return;
+
+  // Prevent double-execution for the same hand/session (can happen from clustered state updates)
+  const blindsKey = `${gameSession}-${handId}`;
+  if (blindsKeyRef.current === blindsKey) return;
+  blindsKeyRef.current = blindsKey;
+
+  if (!multiplayerActive || isHost) {
+    setHandStartStacks(gameRef.current.stacks);
 
       if (multiplayerActive && isHost && !suppressMpRef.current) {
         mpSend({
@@ -2242,9 +2269,9 @@ function cards5Str(cards5: Card[]) {
   function actFold(seat: Seat) {
     if (handResult.status !== "playing") return;
 
-    if (multiplayerActive && !suppressMpRef.current) {
-    mpSend({ event: "ACTION", seat, action: { type: "FOLD" } });
-  }
+    if (multiplayerActive && !isHost && !suppressMpRef.current) {
+  mpSend({ event: "ACTION", seat, action: { type: "FOLD" } });
+}
 
     const other: Seat = seat === "top" ? "bottom" : "top";
 
@@ -2289,9 +2316,9 @@ endHand(
   if (handResult.status !== "playing") return;
   if (!canCheck(seat)) return;
 
-  if (multiplayerActive && !suppressMpRef.current) {
-    mpSend({ event: "ACTION", seat, action: { type: "CHECK" } });
-  }
+  if (multiplayerActive && !isHost && !suppressMpRef.current) {
+  mpSend({ event: "ACTION", seat, action: { type: "CHECK" } });
+}
 
   logAction(seat, "Checks");
   setChecked((prev: { top: boolean; bottom: boolean }) => ({ ...prev, [seat]: true }));
@@ -2330,7 +2357,7 @@ setToAct(other);
   function actCall(seat: Seat) {
   if (handResult.status !== "playing") return;
 
-    if (multiplayerActive && !suppressMpRef.current) {
+   if (multiplayerActive && !isHost && !suppressMpRef.current) {
   mpSend({ event: "ACTION", seat, action: { type: "CALL" } });
 }
 
@@ -2475,9 +2502,9 @@ if (street === 5 && currentFacingBet(seat)) {
   function actBetRaiseTo(seat: Seat, targetTotalBet: number) {
   if (handResult.status !== "playing") return;
 
-    if (multiplayerActive && !suppressMpRef.current) {
-    mpSend({ event: "ACTION", seat, action: { type: "BET_RAISE_TO", to: targetTotalBet } });
-  }
+    if (multiplayerActive && !isHost && !suppressMpRef.current) {
+  mpSend({ event: "ACTION", seat, action: { type: "BET_RAISE_TO", to: targetTotalBet } });
+}
 
   const other: Seat = seat === "top" ? "bottom" : "top";
   const curr = game.bets[seat];
@@ -2600,6 +2627,13 @@ if (isFacing && roundToHundredth(target) === roundToHundredth(otherBet)) {
   if (toAct !== seat) return; // ignore clicks while opponent is thinking
 
   if (multiplayerActive) {
+  // Joiner sends actions to host; host runs the engine and broadcasts SYNC.
+  if (!isHost) {
+    mpSend({ event: "ACTION", seat, action });
+    return;
+  }
+
+  // Host can apply its own actions immediately.
   applyActionFromSeat(seat, action);
   return;
 }
@@ -3665,7 +3699,7 @@ const displayedHistoryBoard = viewingSnapshot
     <div className="text-xs font-normal text-white/70 tabular-nums whitespace-nowrap">
       {viewingSnapshot
         ? `You (${viewingSnapshot.heroPos}) ${formatBB(viewingSnapshot.heroStartStack)}bb · Opponent (${viewingSnapshot.oppPos}) ${formatBB(viewingSnapshot.oppStartStack)}bb`
-        : `You (${dealerSeat === "bottom" ? "SB" : "BB"}) ${formatBB(handStartStacks.bottom)}bb · Opponent (${dealerSeat === "top" ? "SB" : "BB"}) ${formatBB(handStartStacks.top)}bb`}
+        : `You (${heroPosLabel}) ${formatBB(handStartStacks[mySeat])}bb · Opponent (${oppPosLabel}) ${formatBB(handStartStacks[mySeat === "bottom" ? "top" : "bottom"])}bb`}
     </div>
   </div>
 
