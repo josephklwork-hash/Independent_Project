@@ -873,18 +873,20 @@ if (payload.event === "ACTION") {
   payload.game.bets
 ) {
     applyRemoteReset({
-    dealerOffset: payload.dealerOffset as 0 | 1,
-    gameSession: payload.gameSession as number,
-    handId: payload.handId as number,
-    game: payload.game as GameState,
-    toAct: payload.toAct as Seat,
-    handStartStacks: payload.handStartStacks as { top: number; bottom: number },
-    lastRaiseSize: payload.lastRaiseSize as number,
-    endedBoardSnapshot: payload.endedBoardSnapshot as number,
-    blindsPosted: payload.blindsPosted as boolean,
-    cards: (Array.isArray(payload.cards) ? (payload.cards as Card[]) : null),
-  });
-  return;
+  dealerOffset: payload.dealerOffset as 0 | 1,
+  gameSession: payload.gameSession as number,
+  handId: payload.handId as number,
+  game: payload.game as GameState,
+  toAct: payload.toAct as Seat,
+  handStartStacks: payload.handStartStacks as { top: number; bottom: number },
+  lastRaiseSize: payload.lastRaiseSize as number,
+  endedBoardSnapshot: payload.endedBoardSnapshot as number,
+  blindsPosted: payload.blindsPosted as boolean,
+  actionLog: (payload.actionLog as ActionLogItem[]) ?? [],
+  actionSeq: (payload.actionSeq as number) ?? 0,
+});
+
+return; 
 }
 
      if (payload.kind === "DEAL" && Array.isArray(payload.cards)) {
@@ -1375,7 +1377,58 @@ function applyRemoteReset(p: {
   endedBoardSnapshot: number;
   blindsPosted: boolean;
   cards: Card[] | null;
+  actionLog: ActionLogItem[];
+  actionSeq: number;
 }) {
+
+  suppressMpRef.current = true;
+
+  clearTimers();
+
+  gameOverRef.current = false;
+  setGameOver(false);
+  setPlayAgainRequested(false);
+
+  setDealerOffset(p.dealerOffset);
+
+  setGame(p.game);
+  gameRef.current = p.game;
+  streetRef.current = 0;
+
+  setCards(p.cards);
+
+  setHandResult({ status: "playing", winner: null, reason: null, message: "" });
+  setActionLog([]);
+  actionLogRef.current = [];
+  setStreet(0);
+  setChecked({ top: false, bottom: false });
+  setLastAggressor(null);
+  setLastToActAfterAggro(null);
+  setActionsThisStreet(0);
+  setSawCallThisStreet(false);
+  setStreetBettor(null);
+  setShowdownFirst(null);
+  setOppRevealed(false);
+  setYouMucked(false);
+
+  setBetSize(2);
+  setHandLogHistory([]);
+  setLogViewOffset(0);
+
+  setGameSession(p.gameSession);
+  setHandId(p.handId);
+  setDealerOffset(p.dealerOffset);
+  setToAct(p.toAct);
+  setHandStartStacks(p.handStartStacks);
+  setLastRaiseSize(p.lastRaiseSize);
+  setEndedBoardSnapshot(p.endedBoardSnapshot);
+  blindsPostedRef.current = p.blindsPosted;
+  actionSequenceRef.current = p.actionSeq;
+
+  suppressMpRef.current = false;
+}
+
+{
 
   suppressMpRef.current = true;
 
