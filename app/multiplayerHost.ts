@@ -378,7 +378,7 @@ if (this.onStateChange) {
       status: "ended",
       winner,
       reason: "showdown",
-      message: winner === "tie" ? "Split pot" : winner === "bottom" ? "You win" : "Opponent wins",
+      message: winner === "bottom" ? "You win" : "Opponent wins",
     };
     
     this.state.oppRevealed = true;
