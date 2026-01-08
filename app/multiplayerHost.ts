@@ -386,11 +386,7 @@ if (this.onStateChange) {
     // Award pot
     const potSize = this.state.game.pot + this.state.game.bets.top + this.state.game.bets.bottom;
     
-    if (winner === "tie") {
-      this.state.game.stacks.top += potSize / 2;
-      this.state.game.stacks.bottom += potSize / 2;
-      this.logAction("top", `Splits pot ${potSize / 2}bb`);
-    } else {
+    {
       this.state.game.stacks[winner] += potSize;
       this.logAction(winner, `Wins ${potSize}bb`);
     }
