@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
+import { GAME_CONFIG, BASE_SB, BASE_BB } from './gameConfig';
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -110,20 +111,8 @@ type AuthoritativeState = {
 const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
 const SUITS = ["♠", "♥", "♦", "♣"];
 
-// ============================================
-// GAME CONFIGURATION - Change these values to adjust game settings
-// ============================================
-const GAME_CONFIG = {
-  STARTING_STACK_BB: 25,           // Starting stack size in big blinds
-  BLINDS_INCREASE_EVERY_N_HANDS: 5, // How often blind levels change (stacks reduced by 25%)
-  WARNING_STARTS_AT_HAND: 2,        // When to start showing blind change warnings (within each block)
-};
-// ============================================
-
-const BASE_SB = 0.5;
-const BASE_BB = 1;
-
-// Derived constants (don't change these)
+// Game configuration imported from shared gameConfig.ts file
+// To change game settings, edit gameConfig.ts
 const STARTING_STACK_BB = GAME_CONFIG.STARTING_STACK_BB;
 
 /* ---------- helpers ---------- */

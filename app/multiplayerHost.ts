@@ -11,6 +11,7 @@
  */
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { GAME_CONFIG, BASE_SB, BASE_BB } from './gameConfig';
 
 // Types
 export type Seat = "top" | "bottom";
@@ -213,9 +214,9 @@ export class MultiplayerHost {
   private state: HostState;
   
   // Constants
-  private readonly SB = 0.5;
-  private readonly BB = 1;
-  private readonly STARTING_STACK_BB = 25;
+  private readonly SB = BASE_SB;
+  private readonly BB = BASE_BB;
+  private readonly STARTING_STACK_BB = GAME_CONFIG.STARTING_STACK_BB;
   
   private onStateChange?: () => void;
 
@@ -297,7 +298,8 @@ public startHand() {
     // Apply blind level increase (reduce stacks by 25% every N hands as configured)
     // Note: This needs to match GAME_CONFIG.BLINDS_INCREASE_EVERY_N_HANDS from page.tsx
     const BLINDS_INCREASE_EVERY_N_HANDS = 5; // TODO: Share config between files
-    if (this.state.handId !== 0 && this.state.handId % BLINDS_INCREASE_EVERY_N_HANDS === 0) {
+    // Apply blind level increase (reduce stacks by 25% every N hands)
+    if (this.state.handId !== 0 && this.state.handId % GAME_CONFIG.BLINDS_INCREASE_EVERY_N_HANDS === 0) {
       this.state.game.stacks.top = Math.round(this.state.game.stacks.top * 0.75 * 100) / 100;
       this.state.game.stacks.bottom = Math.round(this.state.game.stacks.bottom * 0.75 * 100) / 100;
     }
