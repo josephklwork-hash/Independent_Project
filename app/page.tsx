@@ -648,7 +648,7 @@ const setStreetBettor = (next: any) =>
 
   const [dealerOffset, setDealerOffset] = useState<0 | 1>(0);
 
-  const [betSize, setBetSize] = useState<number | "">(2);
+  const [betSize, setBetSize] = useState<number | "">("");
 
   const [game, setGame] = useState<GameState>({
     stacks: { top: STARTING_STACK_BB, bottom: STARTING_STACK_BB },
@@ -1592,7 +1592,7 @@ useEffect(() => {
         : BB;
     
     const isOpeningAction = displayGame.bets[myActualSeat] === 0 && displayGame.bets[oppActualSeat] === 0;
-    const defaultSize = (isOpeningAction && displayStreet > 0) ? 2 : minRaise;
+    const defaultSize = (displayStreet === 0 && isOpeningAction) ? 2 : minRaise;
     const finalSize = betSize === "" ? defaultSize : Math.max(betSize, minRaise);
 
     dispatchAction({ type: "BET_RAISE_TO", to: finalSize });
@@ -1640,8 +1640,8 @@ useEffect(() => {
 
   } else {
     resetStreetRound(nextStreet);
-    setBetSize(2);
   }
+
 } else {
   // showdown (existing)
   resolveShowdown();
@@ -1692,7 +1692,6 @@ if (
       if (street < 5) {
         const nextStreet: Street = street === 0 ? 3 : street === 3 ? 4 : 5;
         resetStreetRound(nextStreet);
-        setBetSize(2);
       } else {
         // River checked through (no betting): out-of-position shows first
         const noBetOnRiver = bothChecked && streetBettor === null;
@@ -2479,7 +2478,7 @@ return [snap, ...prev].slice(0, 30);
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [multiplayerActive, isHost, mpHost, mpState?.handResult.status, handResult.status, mySeat, cards]);
 
-// Always clear betSize when it becomes our turn
+// Always clear betSize when it becomes our turn or when street/betting changes
 useEffect(() => {
   if (displayToAct !== mySeat) return;
   if (displayHandResult.status !== "playing") return;
@@ -2487,7 +2486,7 @@ useEffect(() => {
   // Clear input box on every turn
   setBetSize("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [displayToAct, mySeat]);
+}, [displayToAct, mySeat, displayStreet, displayGame.bets.top, displayGame.bets.bottom]);
 
 /* ---------- title screen ---------- */
 
@@ -3212,15 +3211,16 @@ if (screen === "professionalDashboard" && seatedRole === "professional") {
     ? bottomMinRaise
     : roundToHundredth((displayGame.pot + displayGame.bets.top + displayGame.bets.bottom) * 0.5);
 
-  // Reset to 2BB when opening action on postflop streets
+  // Opening action logic
   const isOpeningAction = displayGame.bets[myActualSeat] === 0 && displayGame.bets[oppActualSeat] === 0;
-  const effectiveBetSize = (betSize === "" || (isOpeningAction && displayStreet > 0)) ? 2 : betSize;
+  const effectiveBetSize = betSize === "" ? bottomMinRaise : betSize;
   const safeBetSize = Math.max(effectiveBetSize, bottomMinRaise);
   
-  // Display value: only update if betSize is legal (>= bottomMinRaise) or empty
-  const displayBetSize = betSize === "" 
-    ? (isOpeningAction && displayStreet > 0 ? 2 : bottomMinRaise)
-    : (betSize >= bottomMinRaise ? betSize : (isOpeningAction && displayStreet > 0 ? 2 : bottomMinRaise));
+  // Display value: preflop opening defaults to 2BB, postflop opening defaults to 1BB
+  const openingDefault = (displayStreet === 0 && isOpeningAction) ? 2 : (isOpeningAction && displayStreet > 0 ? 1 : bottomMinRaise);
+  const displayBetSize = (betSize === "" || betSize < bottomMinRaise) 
+    ? openingDefault
+    : betSize;
 
 const viewingSnapshot =
   logViewOffset === 0 ? null : handLogHistory[logViewOffset - 1];
@@ -3630,7 +3630,7 @@ const displayedHistoryBoard = viewingSnapshot
           {/* ACTION PANEL (bottom-right) */}
           {displayToAct === mySeat && displayHandResult.status === "playing" && (
             <div className="fixed bottom-6 right-6 z-50 flex w-[320px] flex-col gap-3">
-              {displayGame.stacks[myActualSeat] > bottomCallAmt && (
+              {displayGame.stacks[myActualSeat] > bottomCallAmt && displayGame.stacks[oppActualSeat] > 0 && (
                 <div className="rounded-2xl border bg-white p-3 text-black shadow-sm">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-sm font-semibold">{facingBetBottom ? "Raise to" : "Bet to"}</div>
@@ -3671,7 +3671,7 @@ const displayedHistoryBoard = viewingSnapshot
                       onBlur={() => {
                         // On blur, enforce minimum
                         if (betSize === "" || betSize < bottomMinRaise) {
-                          setBetSizeRounded(isOpeningAction && displayStreet > 0 ? 2 : bottomMinRaise);
+                          setBetSizeRounded((displayStreet === 0 && isOpeningAction) ? 2 : bottomMinRaise);
                         } else {
                           setBetSizeRounded(Math.min(betSize, bottomMaxTo));
                         }
@@ -3709,7 +3709,7 @@ const displayedHistoryBoard = viewingSnapshot
   )}
 </button>
 
-                {displayGame.stacks[myActualSeat] > bottomCallAmt && (
+                {displayGame.stacks[myActualSeat] > bottomCallAmt && displayGame.stacks[oppActualSeat] > 0 && (
                   <button
   type="button"
   onClick={() => {
@@ -3751,6 +3751,6 @@ const displayedHistoryBoard = viewingSnapshot
 
 // Connect people's names to their Linkedin? Have like a (Connect your Linkedin and then the name becomes a hyperlink?)
 
-// Players are able to check when they can't, and the call button is bugged as it says you can call 0.5bb when youre supposed to be calling 5bb facing a 3bet. Im tired im going to bed.
+// FIX THIS: On any street after preflop, you know how 
 
 // Ask Wilson if he would like to do marketing for this 
