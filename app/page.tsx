@@ -2456,19 +2456,18 @@ return [snap, ...prev].slice(0, 30);
   if (multiplayerActive && !isHost) return;
 
   if (nextHandTimerRef.current) window.clearTimeout(nextHandTimerRef.current);
-  nextHandTimerRef.current = window.setTimeout(() => {
+ nextHandTimerRef.current = window.setTimeout(() => {
     if (multiplayerActive && isHost && mpHost) {
       // Check one more time before starting
       const currentState = mpHost.getState();
       if (currentState.game.stacks.top > 0 && currentState.game.stacks.bottom > 0) {
-        currentState.handId++;
         mpHost.startHand();
         setMpState(JSON.parse(JSON.stringify(mpHost.getState())));
       }
     } else if (!multiplayerActive) {
       startNewHand();
     }
-  }, 5000);
+  }, 2000);
 
   return () => {
     if (nextHandTimerRef.current) {
@@ -3298,7 +3297,7 @@ const displayedHistoryBoard = viewingSnapshot
 )}
 
 
-      {blindNotice && !gameOver ? (
+      {blindNotice && !((multiplayerActive && mpState?.gameOver) || (!multiplayerActive && gameOver)) ? (
   <div className="absolute top-6 left-1/2 -translate-x-1/2 text-sm font-semibold text-white">
     {blindNotice}
   </div>
@@ -3320,7 +3319,7 @@ const displayedHistoryBoard = viewingSnapshot
       ? (displayGame.stacks[myActualSeat] <= 0
           ? "Game over – Opponent wins"
           : "Game over – You win")
-      : "Hand ended (next hand in 5s)"}
+      : "Hand ended (next hand in 2s)"}
 </span>
               </div>
               {handResult.message ? (
@@ -3753,5 +3752,7 @@ const displayedHistoryBoard = viewingSnapshot
 // Connect people's names to their Linkedin? Have like a (Connect your Linkedin and then the name becomes a hyperlink?)
 
 // Future improvement idea: You could create a shared gameConfig.ts file that both files import from, so you only need to change it in one place. But for now, just remember to update both!
+
+// After hand 9 hand count went to 1 and then 2?
 
 // Ask Wilson if he would like to do marketing for this 

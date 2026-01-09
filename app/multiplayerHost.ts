@@ -11,7 +11,7 @@
  */
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { GAME_CONFIG, BASE_SB, BASE_BB } from './gameConfig';
+import { GAME_CONFIG } from "./gameConfig";
 
 // Types
 export type Seat = "top" | "bottom";
@@ -214,9 +214,10 @@ export class MultiplayerHost {
   private state: HostState;
   
   // Constants
-  private readonly SB = BASE_SB;
-  private readonly BB = BASE_BB;
+  private readonly SB = 0.5;
+  private readonly BB = 1;
   private readonly STARTING_STACK_BB = GAME_CONFIG.STARTING_STACK_BB;
+  private readonly BLINDS_INCREASE_EVERY_N_HANDS = GAME_CONFIG.BLINDS_INCREASE_EVERY_N_HANDS;
   
   private onStateChange?: () => void;
 
@@ -291,15 +292,24 @@ private createInitialState(initialDealerOffset: 0 | 1): HostState {
    * Start a new hand - called when host enters game or starts next hand
    */
 public startHand() {
-    // Flip dealer for next hand
-    this.state.dealerOffset = this.state.dealerOffset === 0 ? 1 : 0;
-    this.state.dealerSeat = this.state.dealerOffset === 0 ? "top" : "bottom";
+    // Increment handId after first hand completes (so hand 2 starts with handId=1)
+    // Check if we've played at least one hand by checking if action log has content
+    const hasPlayedAHand = this.state.actionLog.length > 0;
     
-    // Apply blind level increase (reduce stacks by 25% every N hands as configured)
-    // Note: This needs to match GAME_CONFIG.BLINDS_INCREASE_EVERY_N_HANDS from page.tsx
-    const BLINDS_INCREASE_EVERY_N_HANDS = 5; // TODO: Share config between files
-    // Apply blind level increase (reduce stacks by 25% every N hands)
-    if (this.state.handId !== 0 && this.state.handId % GAME_CONFIG.BLINDS_INCREASE_EVERY_N_HANDS === 0) {
+    if (this.state.handId > 0 || hasPlayedAHand) {
+      this.state.handId++;
+    }
+    
+    // Flip dealer for hands after the first
+    if (this.state.handId > 0) {
+      this.state.dealerOffset = this.state.dealerOffset === 0 ? 1 : 0;
+      this.state.dealerSeat = this.state.dealerOffset === 0 ? "top" : "bottom";
+    }
+    
+    // Apply blind level increase (reduce stacks by 25% every N hands from config)
+    // With N=5: happens at handId 5, 10, 15... (Hand #6, #11, #16...)
+    // With N=10: happens at handId 10, 20, 30... (Hand #11, #21, #31...)
+    if (this.state.handId > 0 && this.state.handId % this.BLINDS_INCREASE_EVERY_N_HANDS === 0) {
       this.state.game.stacks.top = Math.round(this.state.game.stacks.top * 0.75 * 100) / 100;
       this.state.game.stacks.bottom = Math.round(this.state.game.stacks.bottom * 0.75 * 100) / 100;
     }
