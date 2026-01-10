@@ -2614,6 +2614,7 @@ useEffect(() => {
       oppPos: (mpState.dealerSeat === mySeat ? "BB" : "SB") as "SB" | "BB",
       heroCards: myCards.sort((a, b) => RANK_TO_VALUE[b.rank] - RANK_TO_VALUE[a.rank]) as [Card, Card],
       oppCards: oppCards.sort((a, b) => RANK_TO_VALUE[b.rank] - RANK_TO_VALUE[a.rank]) as [Card, Card],
+      heroShown: true,
       oppShown: mpState.oppRevealed,
       heroStartStack: mpState.handStartStacks[mySeat],
       oppStartStack: mpState.handStartStacks[mySeat === "bottom" ? "top" : "bottom"],
