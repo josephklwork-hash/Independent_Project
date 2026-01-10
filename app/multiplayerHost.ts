@@ -520,22 +520,27 @@ if (this.onStateChange) {
   
   private handleCall(seat: Seat) {
     const otherSeat = seat === "top" ? "bottom" : "top";
-    const toCall = this.state.game.bets[otherSeat] - this.state.game.bets[seat];
-    const actualCall = Math.min(toCall, this.state.game.stacks[seat]);
+    const toCall = roundToHundredth(this.state.game.bets[otherSeat] - this.state.game.bets[seat]);
+    const actualCall = roundToHundredth(Math.min(toCall, this.state.game.stacks[seat]));
     
-    this.state.game.bets[seat] += actualCall;
-    this.state.game.stacks[seat] -= actualCall;
+    this.state.game.bets[seat] = roundToHundredth(this.state.game.bets[seat] + actualCall);
+    this.state.game.stacks[seat] = roundToHundredth(this.state.game.stacks[seat] - actualCall);
     
     // If caller couldn't fully call (all-in short), refund excess to bettor
     if (actualCall < toCall) {
-      const refund = this.state.game.bets[otherSeat] - this.state.game.bets[seat];
-      this.state.game.bets[otherSeat] -= refund;
-      this.state.game.stacks[otherSeat] += refund;
+      const refund = roundToHundredth(this.state.game.bets[otherSeat] - this.state.game.bets[seat]);
+      this.state.game.bets[otherSeat] = roundToHundredth(this.state.game.bets[otherSeat] - refund);
+      this.state.game.stacks[otherSeat] = roundToHundredth(this.state.game.stacks[otherSeat] + refund);
     }
     
     this.logAction(seat, `Calls ${actualCall}bb`);
     
     this.state.actionsThisStreet++;
+
+    // If someone is all-in after this call, reveal all cards
+    if (this.state.game.stacks[seat] <= 0 || this.state.game.stacks[otherSeat] <= 0) {
+      this.state.oppRevealed = true;
+    }
     
     // Special case: Preflop in heads-up, if SB calls BB's ORIGINAL blind (not a raise), BB gets option
     if (this.state.street === 0) {
@@ -563,8 +568,8 @@ if (this.onStateChange) {
     const cappedAmount = Math.min(amount, maxPossible);
     const betAmount = cappedAmount - currentBet;
     
-    this.state.game.bets[seat] = cappedAmount;
-    this.state.game.stacks[seat] -= betAmount;
+    this.state.game.bets[seat] = roundToHundredth(cappedAmount);
+    this.state.game.stacks[seat] = roundToHundredth(this.state.game.stacks[seat] - betAmount);
     
     const actionText = otherCurrentBet > currentBet ? `Raises to ${amount}bb` : `Bets ${amount}bb`;
     this.logAction(seat, actionText);
