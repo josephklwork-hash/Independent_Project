@@ -131,6 +131,10 @@ function getStraightHigh(valuesUniqueDesc: number[]) {
   return null;
 }
 
+function roundToHundredth(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 function evaluate7(cards: Card[]) {
   const values = cards.map((c) => RANK_TO_VALUE[c.rank]).sort((a, b) => b - a);
 
