@@ -85,6 +85,12 @@ gameSession: number;
   oppRevealed: boolean;
   youMucked: boolean;
   
+  // Show hand state (for showing after fold)
+  canShowTop: boolean;     // Top player can show their hand
+  canShowBottom: boolean;  // Bottom player can show their hand
+  topShowed: boolean;      // Top player showed their hand
+  bottomShowed: boolean;   // Bottom player showed their hand
+  
   // Hand start stacks for history
   handStartStacks: { top: number; bottom: number };
 };
@@ -265,6 +271,10 @@ private createInitialState(initialDealerOffset: 0 | 1): HostState {
       checked: { top: false, bottom: false },
       oppRevealed: false,
       youMucked: false,
+      canShowTop: false,
+      canShowBottom: false,
+      topShowed: false,
+      bottomShowed: false,
       handStartStacks: { top: this.STARTING_STACK_BB, bottom: this.STARTING_STACK_BB },
     };
   }
@@ -284,6 +294,29 @@ private createInitialState(initialDealerOffset: 0 | 1): HostState {
       // Handle state requests
       if (payload.event === "SYNC" && payload.kind === "REQUEST_SNAPSHOT") {
         this.broadcastFullState();
+      }
+      
+      // Handle show hand action
+      if (payload.event === "SHOW_HAND" && payload.seat) {
+        console.log("Host received SHOW_HAND event");
+        console.log("  - Seat:", payload.seat);
+        console.log("  - canShowTop:", this.state.canShowTop);
+        console.log("  - canShowBottom:", this.state.canShowBottom);
+        console.log("  - topShowed:", this.state.topShowed);
+        console.log("  - bottomShowed:", this.state.bottomShowed);
+        
+        this.handleShowHand(payload.seat as Seat);
+        
+        console.log("After handleShowHand:");
+        console.log("  - topShowed:", this.state.topShowed);
+        console.log("  - bottomShowed:", this.state.bottomShowed);
+        
+        this.broadcastFullState(); // Broadcast updated state back to joiner
+        
+        // Notify host to update its display
+        if (this.onStateChange) {
+          this.onStateChange();
+        }
       }
     });
   }
@@ -338,6 +371,10 @@ public startHand() {
     this.state.checked = { top: false, bottom: false };
     this.state.oppRevealed = false;
     this.state.youMucked = false;
+    this.state.canShowTop = false;
+    this.state.canShowBottom = false;
+    this.state.topShowed = false;
+    this.state.bottomShowed = false;
     this.state.lastRaiseSize = this.BB;
     
     // Post blinds
@@ -438,6 +475,12 @@ if (this.onStateChange) {
     
     this.logAction(winner, `Wins ${potSize}bb`);
     
+    // After a fold, both players can optionally show their hand
+    this.state.canShowTop = true;
+    this.state.canShowBottom = true;
+    this.state.topShowed = false;
+    this.state.bottomShowed = false;
+    
     // Check if game is over
     if (this.state.game.stacks.top <= 0 || this.state.game.stacks.bottom <= 0) {
       this.state.gameOver = true;
@@ -529,6 +572,33 @@ if (this.onStateChange) {
     this.state.toAct = otherSeat;
   }
   
+  private handleShowHand(seat: Seat) {
+    // Check if this seat is allowed to show
+    if (seat === "top" && !this.state.canShowTop) return;
+    if (seat === "bottom" && !this.state.canShowBottom) return;
+    
+    // Check if already showed
+    if (seat === "top" && this.state.topShowed) return;
+    if (seat === "bottom" && this.state.bottomShowed) return;
+    
+    // Mark as showed
+    if (seat === "top") {
+      this.state.topShowed = true;
+    } else {
+      this.state.bottomShowed = true;
+    }
+    
+    // Get the cards for logging
+    const cards = seat === "top" 
+      ? this.state.cards?.slice(0, 2) 
+      : this.state.cards?.slice(2, 4);
+    
+    if (cards && cards.length === 2) {
+      const cardStr = `${cards[0].rank}${cards[0].suit} ${cards[1].rank}${cards[1].suit}`;
+      this.logAction(seat, `Shows ${cardStr}`);
+    }
+  }
+
   private advanceStreet() {
     // Pull bets into pot
     this.state.game.pot += this.state.game.bets.top + this.state.game.bets.bottom;
@@ -659,9 +729,62 @@ if (this.onStateChange) {
   }
   
   /**
-   * Get current state (for host's own display)
+   * Player chooses to show their hand after winning by fold
    */
-  public getState(): HostState {
+  public showHand(seat: Seat) {
+    this.handleShowHand(seat);
+    this.broadcastFullState();
+    
+    // Notify host to update its display
+    if (this.onStateChange) {
+      this.onStateChange();
+    }
+  }
+
+/**
+   * Send an action to the host
+   */
+  public sendAction(seat: Seat, action: GameAction) {
+    this.channel.send({
+      type: "broadcast",
+      event: "mp",
+      payload: {
+        event: "ACTION",
+        seat,
+        action,
+        sender: this.userId,
+      },
+    }).then(() => {
+      console.log("Sent action:", action.type);
+    }).catch((err) => {
+      console.error("Action send failed:", err);
+    });
+  }
+  
+  /**
+   * Send show hand action to the host
+   */
+  public sendShowHand(seat: Seat) {
+    console.log("Joiner sending SHOW_HAND:", seat);
+    this.channel.send({
+      type: "broadcast",
+      event: "mp",
+      payload: {
+        event: "SHOW_HAND",
+        seat,
+        sender: this.userId,
+      },
+    }).then(() => {
+      console.log("Sent show hand successfully");
+    }).catch((err) => {
+      console.error("Show hand send failed:", err);
+    });
+  }
+  
+  /**
+   * Get current state
+   */
+  public getState(): HostState | null {
     return this.state;
   }
   

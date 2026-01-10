@@ -70,7 +70,8 @@ type HandLogSnapshot = {
   heroCards: [Card, Card];
   oppCards: [Card, Card];
 
-  // true only if opponent actually showed / was required to show
+  // true only if player actually showed / was required to show
+  heroShown: boolean;
   oppShown: boolean;
 
   heroStartStack: number;
@@ -104,6 +105,10 @@ type AuthoritativeState = {
   oppRevealed: boolean;
   youMucked: boolean;
   streetBettor: Seat | null;
+  canShowTop: boolean;
+  canShowBottom: boolean;
+  topShowed: boolean;
+  bottomShowed: boolean;
 };
 
 /* ---------- constants ---------- */
@@ -526,6 +531,10 @@ const BB = BASE_BB; // always 1
   oppRevealed: false,
   youMucked: false,
   streetBettor: null,
+  canShowTop: false,
+  canShowBottom: false,
+  topShowed: false,
+  bottomShowed: false,
 }));
 
 const street = auth.street;
@@ -637,6 +646,34 @@ const setYouMucked = (next: any) =>
   setAuth((prev) => ({
     ...prev,
     youMucked: typeof next === "function" ? next(prev.youMucked) : next,
+  }));
+
+const canShowTop = auth.canShowTop;
+const setCanShowTop = (next: any) =>
+  setAuth((prev) => ({
+    ...prev,
+    canShowTop: typeof next === "function" ? next(prev.canShowTop) : next,
+  }));
+
+const canShowBottom = auth.canShowBottom;
+const setCanShowBottom = (next: any) =>
+  setAuth((prev) => ({
+    ...prev,
+    canShowBottom: typeof next === "function" ? next(prev.canShowBottom) : next,
+  }));
+
+const topShowed = auth.topShowed;
+const setTopShowed = (next: any) =>
+  setAuth((prev) => ({
+    ...prev,
+    topShowed: typeof next === "function" ? next(prev.topShowed) : next,
+  }));
+
+const bottomShowed = auth.bottomShowed;
+const setBottomShowed = (next: any) =>
+  setAuth((prev) => ({
+    ...prev,
+    bottomShowed: typeof next === "function" ? next(prev.bottomShowed) : next,
   }));
 
 const streetBettor = auth.streetBettor;
@@ -914,10 +951,19 @@ const displayHandResult = multiplayerActive && mpState ? mpState.handResult : ha
 const displayStreet = multiplayerActive && mpState ? mpState.street : street;
 const displayOppRevealed = multiplayerActive && mpState ? mpState.oppRevealed : oppRevealed;
 const displayYouMucked = multiplayerActive && mpState ? mpState.youMucked : youMucked;
+const displayCanShowTop = multiplayerActive && mpState ? mpState.canShowTop : canShowTop;
+const displayCanShowBottom = multiplayerActive && mpState ? mpState.canShowBottom : canShowBottom;
+const displayTopShowed = multiplayerActive && mpState ? mpState.topShowed : topShowed;
+const displayBottomShowed = multiplayerActive && mpState ? mpState.bottomShowed : bottomShowed;
 
   // Perspective helpers: map game seats to screen positions
   const myActualSeat = mySeat; // "bottom" for host, "top" for joiner
   const oppActualSeat: Seat = mySeat === "bottom" ? "top" : "bottom";
+  
+  // Determine if I can show hand and if opponent showed
+  const canIShow = myActualSeat === "top" ? displayCanShowTop : displayCanShowBottom;
+  const didIShow = myActualSeat === "top" ? displayTopShowed : displayBottomShowed;
+  const didOppShow = myActualSeat === "top" ? displayBottomShowed : displayTopShowed;
   
   // Game state from my perspective
   const myStack = displayGame.stacks[myActualSeat];
@@ -950,29 +996,44 @@ console.log('DEBUG - toAct:', toAct, 'mySeat:', mySeat, 'myTurn:', toAct === myS
 }
 
 async function createPinGame() {
+  const startTime = performance.now();
+  console.log("=== CREATE GAME START ===");
   let user: User;
 
-  // ensure we have an authenticated (anonymous is OK) user
+  // Try to use existing session first (much faster)
   try {
-    const { data, error } = await supabase.auth.getUser();
-    if (!error && data.user) {
-      user = data.user;
+    console.log("Step 1: Checking for existing user...");
+    const { data: existingData } = await supabase.auth.getUser();
+    
+    if (existingData?.user) {
+      user = existingData.user;
+      console.log("Using existing user:", user.id);
     } else {
+      // Only create anonymous user if needed
+      console.log("Creating new anonymous user...");
+      const authStart = performance.now();
       const { data: anonData, error: anonErr } =
         await supabase.auth.signInAnonymously();
+      console.log(`signInAnonymously took ${(performance.now() - authStart).toFixed(0)}ms`);
+      
       if (anonErr || !anonData.user) throw anonErr;
       user = anonData.user;
+      console.log("Anonymous user created:", user.id);
     }
   } catch (e) {
     console.error("Auth failed:", e);
     alert("Could not start a guest session.");
+    setCreatingGame(false);
     return;
   }
 
   // attempt to create a unique 4-digit PIN
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const pin = generate4DigitPin();
+    console.log(`\nAttempt ${attempt + 1}: Trying PIN ${pin}`);
 
+    console.log("Step 2: Inserting game...");
+    const insertStart = performance.now();
     const { data: gameRow, error: gameErr } = await supabase
       .from("games")
       .insert({
@@ -982,12 +1043,28 @@ async function createPinGame() {
       })
       .select("id,pin")
       .single();
+    console.log(`games.insert took ${(performance.now() - insertStart).toFixed(0)}ms`);
 
-    if (gameErr || !gameRow) {
+    if (gameErr) {
       console.error("games.insert failed:", gameErr);
-      continue; // try a different pin
+      // If it's a PIN collision (unique constraint violation), try again
+      if (gameErr.code === "23505") {
+        console.log("PIN collision, trying new PIN...");
+        continue;
+      }
+      // For other errors, fail immediately
+      alert("Failed to create game. Please try again.");
+      setCreatingGame(false);
+      return;
     }
 
+    if (!gameRow) {
+      console.error("No game row returned");
+      continue;
+    }
+
+    console.log("Step 3: Claiming seat...");
+    const playerStart = performance.now();
     const { error: playerErr } = await supabase
       .from("game_players")
       .insert({
@@ -995,31 +1072,38 @@ async function createPinGame() {
         user_id: user.id,
         seat: "bottom",
       });
+    console.log(`game_players.insert took ${(performance.now() - playerStart).toFixed(0)}ms`);
 
     if (playerErr) {
       console.error("game_players.insert failed:", playerErr);
       alert("Failed to claim seat.");
+      setCreatingGame(false);
       return;
     }
 
-setJoinMode(false);
-setJoinPinInput("");
-setGamePin(gameRow.pin);
+    const totalTime = (performance.now() - startTime).toFixed(0);
+    console.log(`=== GAME CREATED SUCCESSFULLY in ${totalTime}ms ===`);
+    console.log("PIN:", gameRow.pin);
 
-setGameId(gameRow.id);
-setMySeat("bottom");
-setMultiplayerActive(false);
+    setJoinMode(false);
+    setJoinPinInput("");
+    setGamePin(gameRow.pin);
 
-// Randomize dealer offset once when creating the game
-const initialDealerOffset: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
-setDealerOffset(initialDealerOffset);
+    setGameId(gameRow.id);
+    setMySeat("bottom");
+    setMultiplayerActive(false);
 
-// stay on title screen to show the PIN screen
-return;
+    // Randomize dealer offset once when creating the game
+    const initialDealerOffset: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
+    setDealerOffset(initialDealerOffset);
 
+    // stay on title screen to show the PIN screen
+    return;
   }
 
-  alert("Failed to create game (PIN collision). Try again.");
+  console.error("Failed after 5 attempts");
+  alert("Failed to create game (PIN collision). Please try again.");
+  setCreatingGame(false);
 }
 
 async function getOrCreateUser() {
@@ -1036,51 +1120,99 @@ async function getOrCreateUser() {
 async function joinPinGame() {
   const pin = joinPinInput.trim();
   if (pin.length !== 4) return;
+  
+  // Prevent multiple simultaneous join attempts
+  if (creatingGame) {
+    console.log("Already joining game, ignoring duplicate click");
+    return;
+  }
+  
+  setCreatingGame(true);
+  console.log("=== JOIN GAME START ===");
+  console.log("PIN:", pin);
+  
+  let user: User;
+  try {
+    console.log("Creating anonymous user...");
+    const authStart = performance.now();
+    const { data: anonData, error: anonErr } =
+      await supabase.auth.signInAnonymously();
+    console.log(`signInAnonymously took ${(performance.now() - authStart).toFixed(0)}ms`);
+    
+    if (anonErr || !anonData.user) {
+      console.error("Anonymous auth error:", anonErr);
+      throw anonErr;
+    }
+    user = anonData.user;
+    console.log("Anonymous user created:", user.id);
+  } catch (e) {
+    console.error("joinPinGame auth failed:", e);
+    alert("Network error: Could not connect to server. Please check your internet connection and try again.");
+    setCreatingGame(false);
+    return;
+  }
 
- let user: User;
-try {
-  user = await getOrCreateUser();
-} catch (e) {
-  console.error("joinPinGame auth failed:", e);
-  alert("Could not start a guest session.");
-  return;
-}
-
+  console.log("Looking up game with PIN:", pin);
   const { data: gameRow, error: gameErr } = await supabase
     .from("games")
     .select("id,pin,status")
     .eq("pin", pin)
     .single();
 
-  if (gameErr || !gameRow) return;
+  if (gameErr) {
+    console.error("Game lookup error:", gameErr);
+    alert("Could not find game with that PIN. Please check the PIN and try again.");
+    setCreatingGame(false);
+    return;
+  }
+  
+  if (!gameRow) {
+    console.error("No game found with PIN:", pin);
+    alert("Game not found. Please check the PIN.");
+    setCreatingGame(false);
+    return;
+  }
+  
+  console.log("Found game:", gameRow.id);
 
   // join as top seat
+  console.log("Claiming seat in game...");
   const { error: playerErr } = await supabase.from("game_players").insert({
     game_id: gameRow.id,
     user_id: user.id,
     seat: "top",
   });
 
-  if (playerErr) return;
+  if (playerErr) {
+    console.error("Failed to claim seat:", playerErr);
+    alert("Could not join game. The seat may already be taken.");
+    setCreatingGame(false);
+    return;
+  }
+  
+  console.log("Seat claimed, marking game as active...");
 
   // mark game as active
+  console.log("Marking game as active...");
   await supabase.from("games").update({ status: "active" }).eq("id", gameRow.id);
 
+  console.log("Join successful, entering game...");
   setJoinMode(false);
-setJoinPinInput("");
-setGamePin(gameRow.pin);
+  setJoinPinInput("");
+  setGamePin(gameRow.pin);
 
-setGameId(gameRow.id);
+  setGameId(gameRow.id);
 
-// IMPORTANT: set seat BEFORE enabling multiplayer so isHost is never true on joiner
-setMySeat("top");
-setMultiplayerActive(true);
+  // IMPORTANT: set seat BEFORE enabling multiplayer so isHost is never true on joiner
+  setMySeat("top");
+  setMultiplayerActive(true);
 
-// enter the game screen and wait for host's RESET
+  // enter the game screen and wait for host's RESET
   clearTimers();
   setBetSize(2);
   setSeatedRole((prev) => prev ?? "student");
   setScreen("game");
+  setCreatingGame(false);
 }
 
 function clearPin() {
@@ -1204,6 +1336,13 @@ function applyRemoteReset(p: {
           : [oppB!, oppA!],
 
       // Decide shown vs mucked from what actually got logged
+      heroShown: (() => {
+        const log = actionLogRef.current;
+        const mucked = log.some((it) => it.seat === "bottom" && /muck/i.test(it.text));
+        const showed = log.some((it) => it.seat === "bottom" && it.text.startsWith("Shows "));
+        return showed && !mucked;
+      })(),
+      
       oppShown: (() => {
         const log = actionLogRef.current;
         const mucked = log.some((it) => it.seat === "top" && /muck/i.test(it.text));
@@ -1371,6 +1510,10 @@ setToAct(firstToAct);
     setShowdownFirst(null);
     setOppRevealed(false);
     setYouMucked(false);
+    setCanShowTop(false);
+    setCanShowBottom(false);
+    setTopShowed(false);
+    setBottomShowed(false);
 
     setSawCallThisStreet(false);
 
@@ -1426,6 +1569,10 @@ setCards(nextCards);
     setShowdownFirst(null);
     setOppRevealed(false);
     setYouMucked(false);
+    setCanShowTop(false);
+    setCanShowBottom(false);
+    setTopShowed(false);
+    setBottomShowed(false);
 
     setBetSize(2);
     setHandLogHistory([]);
@@ -1452,6 +1599,10 @@ allInCallThisHandRef.current = false;
     setBetSize(roundToHundredth(Math.max(0, value)));
   }
 
+  // Determine if viewing history snapshot
+  const viewingSnapshot =
+    logViewOffset === 0 ? null : handLogHistory[logViewOffset - 1];
+
   // Raw cards from deck: [0,1] = top seat, [2,3] = bottom seat
 const topRaw1 = displayCards?.[0];
 const topRaw2 = displayCards?.[1];
@@ -1467,20 +1618,32 @@ const youRaw1 = mySeat === "bottom" ? bottomRaw1 : topRaw1;
 const youRaw2 = mySeat === "bottom" ? bottomRaw2 : topRaw2;
 
   const [oppA, oppB] = useMemo(() => {
+    // When viewing snapshot, use snapshot's opponent cards
+    if (viewingSnapshot) {
+      return [viewingSnapshot.oppCards[0], viewingSnapshot.oppCards[1]] as const;
+    }
+    
     if (!oppRaw1 || !oppRaw2) return [undefined, undefined] as const;
     const a = RANK_TO_VALUE[oppRaw1.rank];
     const b = RANK_TO_VALUE[oppRaw2.rank];
     return a >= b ? ([oppRaw1, oppRaw2] as const) : ([oppRaw2, oppRaw1] as const);
-  }, [oppRaw1, oppRaw2]);
+  }, [oppRaw1, oppRaw2, viewingSnapshot]);
 
   const [youC, youD] = useMemo(() => {
+    // When viewing snapshot, use snapshot's hero cards
+    if (viewingSnapshot) {
+      return [viewingSnapshot.heroCards[0], viewingSnapshot.heroCards[1]] as const;
+    }
+    
     if (!youRaw1 || !youRaw2) return [undefined, undefined] as const;
     const a = RANK_TO_VALUE[youRaw1.rank];
     const b = RANK_TO_VALUE[youRaw2.rank];
     return a >= b ? ([youRaw1, youRaw2] as const) : ([youRaw2, youRaw1] as const);
-  }, [youRaw1, youRaw2]);
+  }, [youRaw1, youRaw2, viewingSnapshot]);
 
-  const board = displayCards ? displayCards.slice(4, 9) : [];
+  const board = viewingSnapshot 
+    ? viewingSnapshot.endedBoard 
+    : (displayCards ? displayCards.slice(4, 9) : []);
 
   const heroHandRank = useMemo(() => {
   if (!youC || !youD) return null;
@@ -2363,6 +2526,19 @@ useEffect(() => {
     oppHandDesc = handDesc(oppScore);
   }
   
+  // Determine if hero and opponent showed by checking action log
+  const heroShown = (() => {
+    // You ALWAYS see your own cards in hand history (for review purposes)
+    return true;
+  })();
+  
+  const oppShown = (() => {
+    const log = mpState.actionLog;
+    // Opponent cards ONLY show if: they explicitly clicked "Show Hand"
+    const oppShowedCards = log.some((it) => it.seat === oppActualSeat && it.text.startsWith("Shows "));
+    return oppShowedCards;
+  })();
+  
   const snap: HandLogSnapshot = {
     handNo: mpState.handId,
     dealer: mpState.dealerSeat,
@@ -2381,7 +2557,8 @@ useEffect(() => {
       ? [oppCards[0], oppCards[1]]
       : [oppCards[1], oppCards[0]],
     
-    oppShown: mpState.oppRevealed,
+    heroShown,
+    oppShown,
     
     heroStartStack: mpState.handStartStacks[mySeat],
     oppStartStack: mpState.handStartStacks[mySeat === "bottom" ? "top" : "bottom"],
@@ -2393,12 +2570,24 @@ useEffect(() => {
   };
   
   setHandLogHistory((prev) => {
-    // Don't add duplicate snapshots for the same hand
-    if (prev.length > 0 && prev[0]?.handNo === snap.handNo) return prev;
+    // Update existing snapshot if it exists for this hand (to capture show actions), otherwise add new one
+    if (prev.length > 0 && prev[0]?.handNo === snap.handNo) {
+      // Only update if the action log actually changed (has more actions)
+      const prevActionCount = prev[0].log.length;
+      const newActionCount = snap.log.length;
+      
+      if (newActionCount > prevActionCount) {
+        console.log('Updating hand history snapshot:', snap.handNo + 1, 'actions:', prevActionCount, '→', newActionCount);
+        // Replace the first (most recent) snapshot with updated version that includes new actions
+        return [snap, ...prev.slice(1)];
+      }
+      // No change in action count, don't update
+      return prev;
+    }
     console.log('Saving hand history snapshot:', snap.handNo + 1);
     return [snap, ...prev].slice(0, 30);
   });
-}, [mpState?.handResult.status, multiplayerActive, mpState, mySeat, displayCards, board]);
+}, [mpState?.handResult.status, mpState?.actionLog?.length, multiplayerActive, mySeat, displayCards, board]);
 
 // auto next hand 5 seconds after hand ends
 useEffect(() => {
@@ -2467,7 +2656,7 @@ return [snap, ...prev].slice(0, 30);
     } else if (!multiplayerActive) {
       startNewHand();
     }
-  }, 2000);
+  }, 10000);
 
   return () => {
     if (nextHandTimerRef.current) {
@@ -3222,9 +3411,6 @@ if (screen === "professionalDashboard" && seatedRole === "professional") {
     ? openingDefault
     : betSize;
 
-const viewingSnapshot =
-  logViewOffset === 0 ? null : handLogHistory[logViewOffset - 1];
-
   const heroPosLabel = viewingSnapshot
   ? viewingSnapshot.heroPos
   : dealerSeat === mySeat ? "SB/D" : "BB";
@@ -3296,8 +3482,43 @@ const displayedHistoryBoard = viewingSnapshot
   </div>
 )}
 
+{/* Show Hand Button */}
+{displayHandResult.status === "ended" && 
+ displayHandResult.reason === "fold" && 
+ canIShow && 
+ !didIShow && 
+ !((multiplayerActive && mpState?.gameOver) || (!multiplayerActive && gameOver)) && (
+  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+    <button
+      onClick={() => {
+        if (multiplayerActive && isHost && mpHost) {
+          mpHost.showHand(mySeat);
+          setMpState(JSON.parse(JSON.stringify(mpHost.getState())));
+        } else if (multiplayerActive && mpJoiner) {
+          mpJoiner.sendShowHand(mySeat);
+        } else {
+          // Single player - update local state
+          if (mySeat === "top") {
+            setTopShowed(true);
+          } else {
+            setBottomShowed(true);
+          }
+          
+          if (youC && youD) {
+            logAction(mySeat, `Shows ${cardStr(youC)} ${cardStr(youD)}`);
+          }
+        }
+      }}
+      className="rounded-2xl border border-black bg-white px-6 py-2 text-sm font-semibold text-black shadow-sm hover:bg-gray-50"
+    >
+      Show Hand
+    </button>
+  </div>
+)}
 
-      {blindNotice && !((multiplayerActive && mpState?.gameOver) || (!multiplayerActive && gameOver)) ? (
+      {blindNotice && 
+       displayHandResult.status === "playing" && 
+       !((multiplayerActive && mpState?.gameOver) || (!multiplayerActive && gameOver)) ? (
   <div className="absolute top-6 left-1/2 -translate-x-1/2 text-sm font-semibold text-white">
     {blindNotice}
   </div>
@@ -3319,7 +3540,7 @@ const displayedHistoryBoard = viewingSnapshot
       ? (displayGame.stacks[myActualSeat] <= 0
           ? "Game over – Opponent wins"
           : "Game over – You win")
-      : "Hand ended (next hand in 2s)"}
+      : "Hand ended (next hand in 10s)"}
 </span>
               </div>
               {handResult.message ? (
@@ -3399,7 +3620,7 @@ const displayedHistoryBoard = viewingSnapshot
           {/* ACTION LOG pinned left + TABLE centered */}
           <div className="relative mt-6 w-full">
             {/* LEFT: ACTION LOG */}
-<div className="absolute -left-54 top-0 w-[500px] rounded-3xl border border-white/10 bg-black/20 p-4 text-white text-left">
+<div className="absolute -left-36 top-0 w-[500px] rounded-3xl border border-white/10 bg-black/20 p-4 text-white text-left">
  {/* Header row (matches your target screenshot) */}
 <div className="mb-6 relative flex w-full items-center gap-4">
   {/* arrows */}
@@ -3440,17 +3661,32 @@ const displayedHistoryBoard = viewingSnapshot
 </div>
 </div>
 
-  {/* Snapshot extras (ONLY when viewing history) */}
-{viewingSnapshot ? (
+  {/* Card summary - shown for both current hand (if ended) and history */}
+{(viewingSnapshot || displayHandResult.status === "ended") ? (
   <div className="mb-3 flex flex-col gap-2">
     <div className="flex items-start gap-4">
       <div className="flex flex-col gap-1 text-xs text-white/70 whitespace-nowrap">
         <div>
           You:{" "}
-          {renderActionText(
-            `${cardStr(viewingSnapshot.heroCards[0])} ${cardStr(viewingSnapshot.heroCards[1])}`
+          {viewingSnapshot ? (
+            viewingSnapshot.heroShown
+              ? renderActionText(
+                  `${cardStr(viewingSnapshot.heroCards[0])} ${cardStr(viewingSnapshot.heroCards[1])}`
+                )
+              : viewingSnapshot.log.some(
+                  (it) => it.seat === myActualSeat && /fold/i.test(it.text)
+                )
+              ? "Folded"
+              : "Mucked"
+          ) : (
+            // Current hand display
+            !displayYouMucked && youC && youD
+              ? renderActionText(`${cardStr(youC)} ${cardStr(youD)}`)
+              : displayActionLog.some((it) => it.seat === myActualSeat && /fold/i.test(it.text))
+              ? "Folded"
+              : "Mucked"
           )}
-          {viewingSnapshot.heroBest5 && (
+          {viewingSnapshot?.heroShown && viewingSnapshot.heroBest5 && (
             <span className="ml-2 opacity-60">
               → {viewingSnapshot.heroBest5.map(cardStr).join(" ")}
             </span>
@@ -3459,16 +3695,25 @@ const displayedHistoryBoard = viewingSnapshot
 
         <div>
           Opponent:{" "}
-          {viewingSnapshot.oppShown
-            ? renderActionText(
-                `${cardStr(viewingSnapshot.oppCards[0])} ${cardStr(viewingSnapshot.oppCards[1])}`
-              )
-            : viewingSnapshot.log.some(
-                (it) => it.seat === oppActualSeat && /fold/i.test(it.text)
-              )
-            ? "Folded"
-            : "Mucked"}
-          {viewingSnapshot.oppShown && viewingSnapshot.oppBest5 && (
+          {viewingSnapshot ? (
+            viewingSnapshot.oppShown
+              ? renderActionText(
+                  `${cardStr(viewingSnapshot.oppCards[0])} ${cardStr(viewingSnapshot.oppCards[1])}`
+                )
+              : viewingSnapshot.log.some(
+                  (it) => it.seat === oppActualSeat && /fold/i.test(it.text)
+                )
+              ? "Folded"
+              : "Mucked"
+          ) : (
+            // Current hand display
+            (displayOppRevealed || didOppShow) && oppA && oppB
+              ? renderActionText(`${cardStr(oppA)} ${cardStr(oppB)}`)
+              : displayActionLog.some((it) => it.seat === oppActualSeat && /fold/i.test(it.text))
+              ? "Folded"
+              : "Mucked"
+          )}
+          {viewingSnapshot?.oppShown && viewingSnapshot.oppBest5 && (
             <span className="ml-2 opacity-60">
               → {viewingSnapshot.oppBest5.map(cardStr).join(" ")}
             </span>
@@ -3476,12 +3721,12 @@ const displayedHistoryBoard = viewingSnapshot
         </div>
       </div>
     
-    {viewingSnapshot.heroHandDesc && (
+    {viewingSnapshot?.heroShown && viewingSnapshot.heroHandDesc && (
       <div className="text-xs text-white/60 pl-1">
         You: {viewingSnapshot.heroHandDesc}
       </div>
     )}
-    {viewingSnapshot.oppShown && viewingSnapshot.oppHandDesc && (
+    {viewingSnapshot?.oppShown && viewingSnapshot.oppHandDesc && (
       <div className="text-xs text-white/60 pl-1">
         Opponent: {viewingSnapshot.oppHandDesc}
       </div>
@@ -3489,11 +3734,19 @@ const displayedHistoryBoard = viewingSnapshot
   </div>
 
     <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-      {displayedHistoryBoard.map((c, i) => (
-        <div key={i} className="scale-[0.75] origin-left shrink-0">
-          <CardTile card={c} />
-        </div>
-      ))}
+      {viewingSnapshot ? (
+        displayedHistoryBoard.map((c, i) => (
+          <div key={i} className="scale-[0.75] origin-left shrink-0">
+            <CardTile card={c} />
+          </div>
+        ))
+      ) : (
+        board.slice(0, displayStreet).map((c, i) => (
+          <div key={i} className="scale-[0.75] origin-left shrink-0">
+            <CardTile card={c} />
+          </div>
+        ))
+      )}
     </div>
   </div>
 ) : null}
@@ -3553,7 +3806,11 @@ const displayedHistoryBoard = viewingSnapshot
 
                   <div className="mt-4 flex justify-center gap-3">
                     {oppA && oppB ? (
-                      (displayHandResult.status === "ended" && displayOppRevealed) ? (
+                      // When viewing history, use snapshot's oppShown; otherwise use live state
+                      (viewingSnapshot 
+                        ? viewingSnapshot.oppShown 
+                        : (displayHandResult.status === "ended" && (displayOppRevealed || didOppShow))
+                      ) ? (
   <>
     <CardTile card={oppA} />
     <CardTile card={oppB} />
@@ -3601,7 +3858,11 @@ const displayedHistoryBoard = viewingSnapshot
                   <div className="mt-4 flex flex-col items-center gap-2">
                  <div className="flex justify-center gap-3">
                    {youC && youD ? (
-                    displayHandResult.status === "ended" && displayYouMucked ? (
+                    // When viewing history, use snapshot's heroShown; otherwise use live state
+                    (viewingSnapshot
+                      ? !viewingSnapshot.heroShown
+                      : (displayHandResult.status === "ended" && displayYouMucked && !didIShow)
+                    ) ? (
                      <>
                       <CardBack />
                       <CardBack />

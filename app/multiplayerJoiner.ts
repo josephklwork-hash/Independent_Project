@@ -93,6 +93,26 @@ export class MultiplayerJoiner {
   }
   
   /**
+   * Send show hand action to the host
+   */
+  public sendShowHand(seat: Seat) {
+    console.log("Joiner sending SHOW_HAND:", seat);
+    this.channel.send({
+      type: "broadcast",
+      event: "mp",
+      payload: {
+        event: "SHOW_HAND",
+        seat,
+        sender: this.userId,
+      },
+    }).then(() => {
+      console.log("Sent show hand successfully");
+    }).catch((err) => {
+      console.error("Show hand send failed:", err);
+    });
+  }
+  
+  /**
    * Get current state
    */
   public getState(): HostState | null {
