@@ -232,14 +232,19 @@ export class MultiplayerHost {
   private onStateChange?: () => void;
   private onOpponentQuit?: () => void;
 
-constructor(channel: RealtimeChannel, userId: string, initialDealerOffset: 0 | 1, onStateChange?: () => void, onOpponentQuit?: () => void) {
+constructor(channel: RealtimeChannel, userId: string, initialDealerOffset: 0 | 1, onStateChange?: () => void, onOpponentQuit?: () => void, savedState?: HostState | null) {
   this.channel = channel;
   this.userId = userId;
   this.onStateChange = onStateChange;
   this.onOpponentQuit = onOpponentQuit;
   
-  // Initialize game state
-  this.state = this.createInitialState(initialDealerOffset);
+  // Initialize game state - use saved state if provided, otherwise create fresh
+  if (savedState) {
+    this.state = savedState;
+    console.log('Host restored from saved state, handId:', savedState.handId);
+  } else {
+    this.state = this.createInitialState(initialDealerOffset);
+  }
   
   // Listen for actions from joiner
   this.setupActionListener();

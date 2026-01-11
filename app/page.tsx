@@ -710,6 +710,8 @@ const setStreetBettor = (next: any) =>
   const [gameId, setGameId] = useState<string | null>(null);
   const [mySeat, setMySeat] = useState<Seat>("bottom");
   const [multiplayerActive, setMultiplayerActive] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(true);
+  const [savedHostState, setSavedHostState] = useState<HostState | null>(null);
 
   // Store the multiplayer controllers
 const [mpHost, setMpHost] = useState<MultiplayerHost | null>(null);
@@ -864,19 +866,30 @@ useEffect(() => {
           dealerOffset, 
           () => {
             // When controller processes joiner's action, update host's display
-            setMpState(JSON.parse(JSON.stringify(host.getState())));
+            const newState = JSON.parse(JSON.stringify(host.getState()));
+            setMpState(newState);
+            // Save state to sessionStorage for reconnection
+            sessionStorage.setItem('headsup_hostState', JSON.stringify(newState));
           },
           () => {
             // Opponent quit
             setOpponentQuit(true);
-          }
+          },
+          savedHostState // Pass saved state if reconnecting
         );
         setMpHost(host);
         
-        // Start the first hand immediately - joiner will request when ready
-        host.startHand();
+        // Only start a new hand if we don't have saved state
+        if (!savedHostState) {
+          host.startHand();
+        }
         // Update our own display with host's state
-        setMpState(JSON.parse(JSON.stringify(host.getState())));
+        const initialState = JSON.parse(JSON.stringify(host.getState()));
+        setMpState(initialState);
+        // Save initial state
+        sessionStorage.setItem('headsup_hostState', JSON.stringify(initialState));
+        // Clear savedHostState after using it
+        setSavedHostState(null);
         
       } else {
         // JOINER: Create joiner controller
@@ -927,6 +940,99 @@ useEffect(() => {
     mounted = false;
     sub.subscription.unsubscribe();
   };
+}, []);
+
+// Check for active game session on mount (reconnection logic)
+useEffect(() => {
+  async function checkForActiveGame() {
+    try {
+      const savedGameId = sessionStorage.getItem('headsup_gameId');
+      const savedSeat = sessionStorage.getItem('headsup_mySeat') as Seat | null;
+      const savedPin = sessionStorage.getItem('headsup_gamePin');
+      const savedStateJson = sessionStorage.getItem('headsup_hostState');
+      
+      if (!savedGameId || !savedSeat) {
+        setIsReconnecting(false);
+        return;
+      }
+      
+      console.log('Found saved game session, attempting reconnect...');
+      
+      const { data: gameRow, error } = await supabase
+        .from('games')
+        .select('id, pin, status')
+        .eq('id', savedGameId)
+        .single();
+      
+      if (error || !gameRow) {
+        console.log('Game no longer exists, clearing session');
+        sessionStorage.removeItem('headsup_gameId');
+        sessionStorage.removeItem('headsup_mySeat');
+        sessionStorage.removeItem('headsup_gamePin');
+        sessionStorage.removeItem('headsup_dealerOffset');
+        sessionStorage.removeItem('headsup_hostState');
+        sessionStorage.removeItem('headsup_handHistory');
+        setIsReconnecting(false);
+        return;
+      }
+      
+      console.log('Game found, reconnecting...', gameRow);
+      
+      const savedDealerOffset = sessionStorage.getItem('headsup_dealerOffset');
+      if (savedDealerOffset) {
+        setDealerOffset(Number(savedDealerOffset) as 0 | 1);
+      }
+      
+      // Restore host state if available
+      if (savedStateJson && savedSeat === 'bottom') {
+        try {
+          const parsedState = JSON.parse(savedStateJson) as HostState;
+          setSavedHostState(parsedState);
+          console.log('Restored host state from session');
+        } catch (e) {
+          console.error('Failed to parse saved state:', e);
+        }
+      }
+      
+      // Restore hand history if available
+      const savedHistoryJson = sessionStorage.getItem('headsup_handHistory');
+      if (savedHistoryJson) {
+        try {
+          const parsedHistory = JSON.parse(savedHistoryJson);
+          setHandLogHistory(parsedHistory);
+          console.log('Restored hand history from session');
+        } catch (e) {
+          console.error('Failed to parse saved history:', e);
+        }
+      }
+      
+      setGameId(savedGameId);
+      setMySeat(savedSeat);
+      setGamePin(savedPin);
+      setSeatedRole('student');
+      
+      if (gameRow.status === 'active') {
+        setMultiplayerActive(true);
+        setScreen('game');
+      } else if (savedSeat === 'bottom') {
+        setScreen('role');
+      } else {
+        console.log('Joiner but game not active, clearing session');
+        sessionStorage.removeItem('headsup_gameId');
+        sessionStorage.removeItem('headsup_mySeat');
+        sessionStorage.removeItem('headsup_gamePin');
+        sessionStorage.removeItem('headsup_dealerOffset');
+        sessionStorage.removeItem('headsup_hostState');
+        sessionStorage.removeItem('headsup_handHistory');
+      }
+    } catch (e) {
+      console.error('Reconnection check failed:', e);
+    } finally {
+      setIsReconnecting(false);
+    }
+  }
+  
+  checkForActiveGame();
 }, []);
 
   const dealerSeat: Seat = useMemo(() => {
@@ -1103,6 +1209,12 @@ async function createPinGame() {
     const initialDealerOffset: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
     setDealerOffset(initialDealerOffset);
 
+    // Save session for reconnection
+    sessionStorage.setItem('headsup_gameId', gameRow.id);
+    sessionStorage.setItem('headsup_mySeat', 'bottom');
+    sessionStorage.setItem('headsup_gamePin', gameRow.pin);
+    sessionStorage.setItem('headsup_dealerOffset', String(initialDealerOffset));
+
     // stay on title screen to show the PIN screen
     return;
   }
@@ -1212,6 +1324,11 @@ async function joinPinGame() {
   // IMPORTANT: set seat BEFORE enabling multiplayer so isHost is never true on joiner
   setMySeat("top");
   setMultiplayerActive(true);
+
+  // Save session for reconnection
+  sessionStorage.setItem('headsup_gameId', gameRow.id);
+  sessionStorage.setItem('headsup_mySeat', 'top');
+  sessionStorage.setItem('headsup_gamePin', gameRow.pin);
 
   // enter the game screen and wait for host's RESET
   clearTimers();
@@ -2608,13 +2725,17 @@ useEffect(() => {
       if (newActionCount > prevActionCount) {
         console.log('Updating hand history snapshot:', snap.handNo + 1, 'actions:', prevActionCount, '→', newActionCount);
         // Replace the first (most recent) snapshot with updated version that includes new actions
-        return [snap, ...prev.slice(1)];
+        const newHistory = [snap, ...prev.slice(1)];
+        sessionStorage.setItem('headsup_handHistory', JSON.stringify(newHistory));
+        return newHistory;
       }
       // No change in action count, don't update
       return prev;
     }
     console.log('Saving hand history snapshot:', snap.handNo + 1);
-    return [snap, ...prev].slice(0, 30);
+    const newHistory = [snap, ...prev].slice(0, 30);
+    sessionStorage.setItem('headsup_handHistory', JSON.stringify(newHistory));
+    return newHistory;
   });
 }, [mpState?.handResult.status, mpState?.actionLog?.length, multiplayerActive, mySeat, displayCards, board]);
 
@@ -2683,7 +2804,10 @@ return [snap, ...prev].slice(0, 30);
 
     if (currentState.game.stacks.top > 0 && currentState.game.stacks.bottom > 0) {
       mpHost.startHand();
-      setMpState(JSON.parse(JSON.stringify(mpHost.getState())));
+      const newState = JSON.parse(JSON.stringify(mpHost.getState()));
+      setMpState(newState);
+      // Save state for reconnection
+      sessionStorage.setItem('headsup_hostState', JSON.stringify(newState));
     }
     return;
   }
@@ -2712,6 +2836,19 @@ useEffect(() => {
   setBetSize("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [displayToAct, mySeat, displayStreet, displayGame.bets.top, displayGame.bets.bottom]);
+
+/* ---------- loading screen while reconnecting ---------- */
+
+if (isReconnecting) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-black">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold text-white mb-4">HeadsUp</h1>
+        <div className="text-white/70">Loading...</div>
+      </div>
+    </main>
+  );
+}
 
 /* ---------- title screen ---------- */
 
@@ -3523,6 +3660,14 @@ const displayedHistoryBoard = viewingSnapshot
     setMultiplayerActive(false);
     setOpponentQuit(false);
     
+    // Clear saved session so we don't reconnect
+    sessionStorage.removeItem('headsup_gameId');
+    sessionStorage.removeItem('headsup_mySeat');
+    sessionStorage.removeItem('headsup_gamePin');
+    sessionStorage.removeItem('headsup_dealerOffset');
+    sessionStorage.removeItem('headsup_hostState');
+    sessionStorage.removeItem('headsup_handHistory');
+    
     clearTimers();
     clearPin();
     setGamePin(null);
@@ -3648,6 +3793,15 @@ className="text-sm min-[1536px]:max-[1650px]:text-xs text-white underline opacit
         }
         setMultiplayerActive(false);
         setOpponentQuit(false);
+        
+        // Clear saved session so we don't reconnect
+        sessionStorage.removeItem('headsup_gameId');
+        sessionStorage.removeItem('headsup_mySeat');
+        sessionStorage.removeItem('headsup_gamePin');
+        sessionStorage.removeItem('headsup_dealerOffset');
+        sessionStorage.removeItem('headsup_hostState');
+        sessionStorage.removeItem('headsup_handHistory');
+        
         clearTimers();
         clearPin();
         setGamePin(null);
