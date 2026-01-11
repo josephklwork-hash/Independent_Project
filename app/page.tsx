@@ -1205,7 +1205,7 @@ useEffect(() => {
     const { data: connectionsData } = await supabase
       .from('connections')
       .select('*')
-      .or(`requester_id.eq.${sbUser.id},recipient_id.eq.${sbUser.id}`);
+      .or(`requester_id.eq.${sbUser!.id},recipient_id.eq.${sbUser!.id}`);
     
     if (connectionsData) {
       const connected = new Set<string>();
@@ -1213,7 +1213,7 @@ useEffect(() => {
       const incoming = new Map<string, string>();
       
       for (const conn of connectionsData) {
-        const isRequester = conn.requester_id === sbUser.id;
+        const isRequester = conn.requester_id === sbUser!.id;
         const odId = isRequester ? conn.recipient_id : conn.requester_id;
         
         if (conn.status === 'accepted') {
@@ -3148,7 +3148,7 @@ useEffect(() => {
     const { data: connectionsData } = await supabase
       .from('connections')
       .select('*')
-      .or(`requester_id.eq.${sbUser.id},recipient_id.eq.${sbUser.id}`)
+      .or(`requester_id.eq.${sbUser!.id},recipient_id.eq.${sbUser!.id}`)
       .eq('status', 'accepted');
     
     if (!connectionsData || connectionsData.length === 0) {
@@ -3157,7 +3157,7 @@ useEffect(() => {
     }
     
     const otherUserIds = connectionsData.map(conn => 
-      conn.requester_id === sbUser.id ? conn.recipient_id : conn.requester_id
+      conn.requester_id === sbUser!.id ? conn.recipient_id : conn.requester_id
     );
     
     const { data: profiles } = await supabase
@@ -3183,7 +3183,7 @@ useEffect(() => {
       const { data: lastMsg } = await supabase
         .from('messages')
         .select('*')
-        .or(`and(sender_id.eq.${sbUser.id},recipient_id.eq.${odId}),and(sender_id.eq.${odId},recipient_id.eq.${sbUser.id})`)
+        .or(`and(sender_id.eq.${sbUser!.id},recipient_id.eq.${odId}),and(sender_id.eq.${odId},recipient_id.eq.${sbUser!.id})`)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
@@ -3203,7 +3203,7 @@ useEffect(() => {
         .from('messages')
         .select('*', { count: 'exact', head: true })
         .eq('sender_id', odId)
-        .eq('recipient_id', sbUser.id)
+        .eq('recipient_id', sbUser!.id)
         .eq('read', false);
       
       if (count && count > 0) {
@@ -3270,7 +3270,7 @@ useEffect(() => {
     const { data } = await supabase
       .from('messages')
       .select('*')
-      .or(`and(sender_id.eq.${sbUser.id},recipient_id.eq.${selectedChatUser.id}),and(sender_id.eq.${selectedChatUser.id},recipient_id.eq.${sbUser.id})`)
+      .or(`and(sender_id.eq.${sbUser!.id},recipient_id.eq.${selectedChatUser!.id}),and(sender_id.eq.${selectedChatUser!.id},recipient_id.eq.${sbUser!.id})`)
       .order('created_at', { ascending: true });
     
     if (data) {
@@ -3286,8 +3286,8 @@ useEffect(() => {
     const { data: updateData, error: updateError } = await supabase
       .from('messages')
       .update({ read: true })
-      .eq('sender_id', selectedChatUser.id)
-      .eq('recipient_id', sbUser.id)
+      .eq('sender_id', selectedChatUser!.id)
+      .eq('recipient_id', sbUser!.id)
       .select();
     
     console.log('Mark as read result:', { updateData, updateError });
@@ -3299,7 +3299,7 @@ useEffect(() => {
     // Clear unread count for this user immediately in UI
     setUnreadCounts(prev => {
       const next = new Map(prev);
-      next.delete(selectedChatUser.id);
+      next.delete(selectedChatUser!.id);
       return next;
     });
   }
@@ -3323,8 +3323,8 @@ useEffect(() => {
       table: 'messages',
     }, (payload) => {
       const m = payload.new as any;
-      if ((m.sender_id === sbUser.id && m.recipient_id === selectedChatUser.id) ||
-          (m.sender_id === selectedChatUser.id && m.recipient_id === sbUser.id)) {
+      if ((m.sender_id === sbUser!.id && m.recipient_id === selectedChatUser!.id) ||
+          (m.sender_id === selectedChatUser!.id && m.recipient_id === sbUser!.id)) {
         setMessages(prev => {
           if (prev.some(msg => msg.id === m.id)) return prev;
           return [...prev, {
