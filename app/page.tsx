@@ -3910,6 +3910,11 @@ if (screen === "studentLogin") {
             placeholder="Email"
             value={loginEmail}
             onChange={(e) => setLoginEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && loginEmail && loginPassword) {
+                document.getElementById('login-button')?.click();
+              }
+            }}
             className="rounded-xl border px-4 py-3 text-sm"
           />
 
@@ -3919,6 +3924,11 @@ if (screen === "studentLogin") {
               placeholder="Password"
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && loginEmail && loginPassword) {
+                  document.getElementById('login-button')?.click();
+                }
+              }}
               className="w-full rounded-xl border px-4 py-3 text-sm pr-12"
             />
             <button
@@ -3932,6 +3942,7 @@ if (screen === "studentLogin") {
 
           <button
             type="button"
+            id="login-button"
             disabled={!loginEmail || !loginPassword}
             onClick={async () => {
               try {
