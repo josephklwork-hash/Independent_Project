@@ -496,41 +496,6 @@ function ConfirmModal({
 /* ---------- main ---------- */
 
 export default function Home() {
-  // Dynamic scaling based on viewport
-  const [gameScale, setGameScale] = useState(1);
-  
-  useEffect(() => {
-    function calculateScale() {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      
-      // Base design: 1512px width (your Mac)
-      // Scale down proportionally for smaller screens
-      let scale = 1;
-      
-      if (width <= 1366) {
-        scale = 0.7;  // Small laptops
-      } else if (width <= 1650) {
-        scale = 0.78; // Your Windows laptop range
-      } else if (width <= 1920) {
-        scale = 0.95; // Full HD
-      } else if (width >= 2560) {
-        scale = 1.1;  // Large monitors
-      }
-      
-      // Also consider height for very short screens
-      if (height < 800) {
-        scale = Math.min(scale, 0.75);
-      }
-      
-      setGameScale(scale);
-    }
-    
-    calculateScale();
-    window.addEventListener('resize', calculateScale);
-    return () => window.removeEventListener('resize', calculateScale);
-  }, []);
-
   const [seatedRole, setSeatedRole] = useState<Role | null>(null);
 
   const [handId, setHandId] = useState(0);
@@ -3627,7 +3592,7 @@ const displayedHistoryBoard = viewingSnapshot
     {blindNotice}
   </div>
 ) : null}
-        <div className="w-full max-w-6xl" style={{ transform: `scale(${gameScale})`, transformOrigin: 'center center' }}>
+        <div className="w-full max-w-6xl">
           <div className="mb-3 md:mb-6 min-[1536px]:max-[1650px]:mb-2 flex items-center justify-between">
             <div>
               <h1 className="text-2xl min-[1536px]:max-[1650px]:text-xl font-bold text-white">HeadsUp</h1>
