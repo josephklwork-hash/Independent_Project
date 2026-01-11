@@ -1167,7 +1167,7 @@ useEffect(() => {
       .from('profiles')
       .select('*')
       .eq('role', 'student')
-      .neq('id', sbUser.id)
+      .neq('id', sbUser!.id)
       .order('created_at', { ascending: false })
       .limit(50);
     
@@ -1175,7 +1175,7 @@ useEffect(() => {
       .from('profiles')
       .select('*')
       .eq('role', 'professional')
-      .neq('id', sbUser.id)
+      .neq('id', sbUser!.id)
       .order('created_at', { ascending: false })
       .limit(50);
     
